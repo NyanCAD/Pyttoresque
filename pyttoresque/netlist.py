@@ -31,8 +31,59 @@ def get_schem_docs(name, db=dbdefault):
         include_docs=True,
         startkey=f"{name}:",
         endkey=f"{name}:\ufff0",
+        update_seq=True
     ).get_result()
-    return {row['id']: row['doc'] for row in res['rows']}
+    return res['update_seq'], {row['id']: row['doc'] for row in res['rows']}
+
+
+def update_schem_docs(name, seq, docs, db=dbdefault):
+    result = service.post_changes(
+        db=db,
+        filter="_selector",
+        since=seq,
+        include_docs=True,
+        selector={"_id": {
+            "$gt": name+":",
+            "$lt": name+":\ufff0",
+        }}).get_result()
+
+    for change in result['results']:
+        doc = change['doc']
+        print(doc)
+        if doc.get('_deleted', False):
+            del docs[doc["_id"]]
+        else:
+            docs[doc["_id"]] = doc
+
+    seq = result['last_seq']
+    return seq, docs
+
+
+def live_schem_docs(name, callback, db=dbdefault):
+    seq, docs = get_schem_docs(name, db)
+    callback(docs)
+
+    result = service.post_changes_as_stream(
+        db=db,
+        feed='continuous',
+        heartbeat=5000,
+        filter="_selector",
+        since=seq,
+        include_docs=True,
+        selector={"_id": {
+            "$gt": name+":",
+            "$lt": name+":\ufff0",
+        }}).get_result()
+
+    for chunk in result.iter_lines():
+        if chunk:
+            doc = json.loads(chunk)["doc"]
+            print(doc)
+            if doc.get('_deleted', False):
+                del docs[doc["_id"]]
+            else:
+                docs[doc["_id"]] = doc
+            callback(docs)
 
 
 def ports(doc):
@@ -114,7 +165,7 @@ def spicename(n):
 
 
 def circuit_spice(name, db=dbdefault):
-    docs = get_schem_docs(name, db)
+    _, docs = get_schem_docs(name, db)
     nl = netlist(docs)
     cir = []
     for id, ports in nl.items():
@@ -147,27 +198,6 @@ def circuit_spice(name, db=dbdefault):
 def spice_netlist(name, db=dbdefault):
     return f"* {name}\n" + circuit_spice(name, db) + "\n.end\n"
 
-def live_spice_netlist(name, callback, db=dbdefault):
-    result = service.post_changes_as_stream(
-        db='schematics',
-        feed='continuous',
-        heartbeat=5000,
-        filter="_selector",
-        since="now",
-        include_docs=True,
-        selector={"_id": {
-            "$gt": name+":",
-            "$lt": name+":\ufff0",
-        }}).get_result()
-    
-    docs = get_schem_docs(name, db)
-
-    for chunk in result.iter_lines():
-        if chunk:
-            doc = json.loads(chunk)["doc"]
-            docs[doc["_id"]] = doc
-            callback(docs)
-
 
 if __name__ == "__main__":
-    print(live_spice_netlist("newwire", print))
+    print(live_schem_docs("newwire", print))
