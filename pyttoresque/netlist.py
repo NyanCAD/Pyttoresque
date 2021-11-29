@@ -6,23 +6,35 @@ service = CloudantV1.new_instance()
 
 dbdefault = "schematics"
 
-mosfet_shape = [
-    " D"
-    "GB"
-    " S"
-]
-
-twoport_shape = [
-    "P"
-    "N"
-]
-
 
 def shape_ports(shape):
     for x, s in enumerate(shape):
         for y, c in enumerate(s):
             if c != ' ':
                 yield x, y, c
+
+
+mosfet_shape = list(shape_ports([
+    " D"
+    "GB"
+    " S"
+]))
+
+twoport_shape = list(shape_ports([
+    "P"
+    "N"
+]))
+
+
+class Modeldict(dict):
+    def __init__(self, *args, db=dbdefault, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.db = db
+
+    def __missing__(self, key):
+        doc = service.get_document(self.db, key).get_result()
+        self[key] = doc
+        return doc
 
 
 def get_schem_docs(name, db=dbdefault):
@@ -35,6 +47,27 @@ def get_schem_docs(name, db=dbdefault):
     ).get_result()
     return res['update_seq'], {row['id']: row['doc'] for row in res['rows']}
 
+
+def get_all_schem_docs(name, db=dbdefault):
+    schem = {}
+    seq, docs = get_schem_docs(name, db)
+    schem[name] = docs
+    devs = deque(docs.values())
+    while devs:
+        dev = devs.popleft()
+        mod = dev.get('props', {}).get('model')
+        if mod and mod not in schem:
+            seq, docs = get_schem_docs(mod, db)
+            schem[mod] = docs
+            devs.extend(docs.values())
+    return seq, schem
+
+def doc_selector(schem):
+    ors = [{"_id": {
+            "$gt": name+":",
+            "$lt": name+":\ufff0",
+        }} for name in schem.keys()]
+    return {"$or": ors}
 
 def update_schem_docs(name, seq, docs, db=dbdefault):
     result = service.post_changes(
@@ -49,7 +82,6 @@ def update_schem_docs(name, seq, docs, db=dbdefault):
 
     for change in result['results']:
         doc = change['doc']
-        print(doc)
         if doc.get('_deleted', False):
             del docs[doc["_id"]]
         else:
@@ -78,7 +110,6 @@ def live_schem_docs(name, callback, db=dbdefault):
     for chunk in result.iter_lines():
         if chunk:
             doc = json.loads(chunk)["doc"]
-            print(doc)
             if doc.get('_deleted', False):
                 del docs[doc["_id"]]
             else:
@@ -86,7 +117,8 @@ def live_schem_docs(name, callback, db=dbdefault):
             callback(docs)
 
 
-def ports(doc):
+
+def ports(doc, models):
     cell = doc['cell']
     x = doc['x']
     y = doc['y']
@@ -98,19 +130,19 @@ def ports(doc):
     elif cell == 'label':
         return {(x, y): doc['name']}
     elif cell in {'nmos', 'pmos'}:
-        return {(x+px, y+py): p for px, py, p in shape_ports(mosfet_shape)}
+        return {(x+px, y+py): p for px, py, p in mosfet_shape}
     elif cell in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
-        return {(x+px, y+py): p for px, py, p in shape_ports(twoport_shape)}
+        return {(x+px, y+py): p for px, py, p in twoport_shape}
     else:
-        raise ValueError(cell)
+        return {(x+px, y+py): p for px, py, p in models[f"models:{cell}"]['conn']}
 
 
-def port_index(docs):
+def port_index(docs, models):
     wire_index = {}
     device_index = {}
     for doc in docs.values():
         cell = doc['cell']
-        for (x, y), p in ports(doc).items():
+        for (x, y), p in ports(doc, models).items():
             if cell in {'wire', 'label'}:
                 wire_index.setdefault((x, y), []).append(doc)
             else:
@@ -118,8 +150,8 @@ def port_index(docs):
     return device_index, wire_index
 
 
-def netlist(docs):
-    device_index, wire_index = port_index(docs)
+def netlist(docs, models):
+    device_index, wire_index = port_index(docs, models)
     nl = {}
     while wire_index:  # while there are devices left
         loc, locdevs = wire_index.popitem()  # take one
@@ -130,7 +162,7 @@ def netlist(docs):
             doc = net.popleft()
             cell = doc['cell']
             if cell == 'wire':
-                for ploc in ports(doc).keys():
+                for ploc in ports(doc, models).keys():
                     if ploc in wire_index:
                         net.extend(wire_index.pop(ploc))
                     if ploc in device_index:
@@ -164,14 +196,13 @@ def spicename(n):
     return n.split('-',)[-1]
 
 
-def circuit_spice(name, db=dbdefault):
-    _, docs = get_schem_docs(name, db)
-    nl = netlist(docs)
+def circuit_spice(docs, models):
+    nl = netlist(docs, models)
     cir = []
     for id, ports in nl.items():
         dev = docs[id]
         cell = dev['cell']
-        model = dev.get('model', '')
+        model = dev.get('props', {}).get('model', '')
         name = dev.get('name') or spicename(id)
         def p(p): return spicename(ports[p])
         propstr = print_props(dev.get('props', {}))
@@ -191,13 +222,35 @@ def circuit_spice(name, db=dbdefault):
             cir.append(
                 f"M{name} {p('D')} {p('G')} {p('S')} {p('B')} {model} {propstr}")
         else:  # subcircuit
-            cir.append(f"X{name}")  # todo
+            m = models[f"models:{cell}"]
+            ports = ' '.join(p(c[2]) for c in m['conn'])
+            cir.append(f"X{name} {ports} {model}")  # todo
     return '\n'.join(cir)
 
 
-def spice_netlist(name, db=dbdefault):
-    return f"* {name}\n" + circuit_spice(name, db) + "\n.end\n"
+def spice_netlist(name, schem, models):
+    ckt = []
+    ckt.append(f"* {name}")
+    for subname, docs in schem.items():
+        if name == subname: continue
+        #TODO don't assume cell==model
+        mod = models[f"models:{subname}"]
+        ports = ' '.join(c[2] for c in mod['conn'])
+        body = circuit_spice(docs, models)
+        ckt.append(f".subckt {subname} {ports}")
+        ckt.append(body)
+        ckt.append(f".ends {subname}")
+
+    body = circuit_spice(schem[name], models)
+    ckt.append(body)
+    ckt.append(".end\n")
+
+    return "\n".join(ckt)
 
 
 if __name__ == "__main__":
-    print(live_schem_docs("newwire", print))
+    models = Modeldict()
+    seq, docs = get_all_schem_docs("top")
+    # print(docs)
+    # print(netlist(docs, models))
+    print(spice_netlist("top", docs, models))
