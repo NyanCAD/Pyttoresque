@@ -1,5 +1,6 @@
+from typing import NamedTuple
 from ibmcloudant.cloudant_v1 import CloudantV1
-from collections import deque
+from collections import deque, namedtuple
 import json
 
 service = CloudantV1.new_instance()
@@ -36,6 +37,22 @@ class Modeldict(dict):
         self[key] = doc
         return doc
 
+class SchemId(namedtuple("SchemId", ["cell", "model", "device", "key"])):
+    @classmethod
+    def from_string(cls, id):
+        schem, dev, *_= id.split(':') + [None]
+        if dev:
+            device, key = dev.split('-')
+        else:
+            device = None
+            key = None
+        cell, model = schem.split('$')
+        return cls(cell, model, device, key)
+
+    @property
+    def schem(self):
+        return f"{self.cell}${self.model}"
+
 
 def get_schem_docs(name, db=dbdefault):
     res = service.post_all_docs(
@@ -55,10 +72,10 @@ def get_all_schem_docs(name, db=dbdefault):
     devs = deque(docs.values())
     while devs:
         dev = devs.popleft()
-        mod = dev.get('props', {}).get('model')
-        if mod and mod not in schem:
-            seq, docs = get_schem_docs(mod, db)
-            schem[mod] = docs
+        _id = SchemId(dev["cell"], dev.get('props', {}).get('model'), None, None)
+        if _id.model and _id.schem not in schem:
+            seq, docs = get_schem_docs(_id.schem, db)
+            schem[_id.schem] = docs
             devs.extend(docs.values())
     return seq, schem
 
@@ -69,32 +86,32 @@ def doc_selector(schem):
         }} for name in schem.keys()]
     return {"$or": ors}
 
-def update_schem_docs(name, seq, docs, db=dbdefault):
+def update_schem(seq, schem, db=dbdefault):
+    sel = doc_selector(schem)
     result = service.post_changes(
         db=db,
         filter="_selector",
         since=seq,
         include_docs=True,
-        selector={"_id": {
-            "$gt": name+":",
-            "$lt": name+":\ufff0",
-        }}).get_result()
+        selector=sel).get_result()
 
     for change in result['results']:
         doc = change['doc']
+        _id = SchemId.from_string(doc["_id"])
         if doc.get('_deleted', False):
-            del docs[doc["_id"]]
+            del schem[_id.schem][doc["_id"]]
         else:
-            docs[doc["_id"]] = doc
+            schem[_id.schem][doc["_id"]] = doc
 
     seq = result['last_seq']
-    return seq, docs
+    return seq, schem
 
 
 def live_schem_docs(name, callback, db=dbdefault):
-    seq, docs = get_schem_docs(name, db)
-    callback(docs)
+    seq, schem = get_all_schem_docs(name, db)
+    callback(schem)
 
+    sel = doc_selector(schem)
     result = service.post_changes_as_stream(
         db=db,
         feed='continuous',
@@ -102,19 +119,17 @@ def live_schem_docs(name, callback, db=dbdefault):
         filter="_selector",
         since=seq,
         include_docs=True,
-        selector={"_id": {
-            "$gt": name+":",
-            "$lt": name+":\ufff0",
-        }}).get_result()
+        selector=sel).get_result()
 
     for chunk in result.iter_lines():
         if chunk:
             doc = json.loads(chunk)["doc"]
+            _id = SchemId.from_string(doc["_id"])
             if doc.get('_deleted', False):
-                del docs[doc["_id"]]
+                del schem[_id.schem][doc["_id"]]
             else:
-                docs[doc["_id"]] = doc
-            callback(docs)
+                schem[_id.schem][doc["_id"]] = doc
+            callback(schem)
 
 
 
@@ -233,13 +248,13 @@ def spice_netlist(name, schem, models):
     ckt.append(f"* {name}")
     for subname, docs in schem.items():
         if name == subname: continue
-        #TODO don't assume cell==model
-        mod = models[f"models:{subname}"]
+        _id = SchemId.from_string(subname)
+        mod = models[f"models:{_id.cell}"]
         ports = ' '.join(c[2] for c in mod['conn'])
         body = circuit_spice(docs, models)
-        ckt.append(f".subckt {subname} {ports}")
+        ckt.append(f".subckt {_id.model} {ports}")
         ckt.append(body)
-        ckt.append(f".ends {subname}")
+        ckt.append(f".ends {_id.model}")
 
     body = circuit_spice(schem[name], models)
     ckt.append(body)
@@ -250,7 +265,7 @@ def spice_netlist(name, schem, models):
 
 if __name__ == "__main__":
     models = Modeldict()
-    seq, docs = get_all_schem_docs("top")
-    # print(docs)
+    seq, docs = get_all_schem_docs("top$top")
+    # print(docs.keys())
     # print(netlist(docs, models))
-    print(spice_netlist("top", docs, models))
+    print(spice_netlist("top$top", docs, models))
