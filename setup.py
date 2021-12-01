@@ -19,7 +19,7 @@ setuptools.setup(
     ],
     install_requires=[
         'ibmcloudant',
-        'pycapnp'
+        'pycapnp',
         'pandas',
     ],
     python_requires='>=3.6',
