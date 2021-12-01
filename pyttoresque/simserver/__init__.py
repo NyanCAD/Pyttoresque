@@ -63,14 +63,18 @@ def read(response):
             return
 
 
-def stream(response, cds):
+def stream(response, cds, cb=None):
     """
     Stream simulation data into a ColumnDataSource
+    Takes an optional callback to stream in `add_next_tick_callback` or invoke `push_notebook`.
     """
     while True:
         res = read(response)
         if res:
-            cds.stream(res.data.data)
+            if cb:
+                cb(lambda: cds.stream(res.data.data))
+            else:
+                cds.stream(res.data.data)
         else:
             break
 
