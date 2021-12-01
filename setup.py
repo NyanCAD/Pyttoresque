@@ -20,8 +20,12 @@ setuptools.setup(
     install_requires=[
         'ibmcloudant',
         'pycapnp',
-        'pandas',
+        'bokeh',
+        'numpy'
     ],
+    package_data={
+        'pyttoresque': ['simserver/Simulator.capnp'],
+    },
     python_requires='>=3.6',
     use_scm_version=True,
     setup_requires=['setuptools_scm'],
