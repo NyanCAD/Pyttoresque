@@ -2,6 +2,7 @@ from os import name
 import capnp
 from pyttoresque.simserver.Simulator_capnp import Ngspice, Xyce, Cxxrtl
 from bokeh.models import ColumnDataSource
+from bokeh.io import push_notebook
 from collections import namedtuple
 import numpy as np
 
@@ -63,18 +64,21 @@ def read(response):
             return
 
 
-def stream(response, cds, cb=None):
+def stream(response, cds, *, doc=None, cell=None):
     """
     Stream simulation data into a ColumnDataSource
-    Takes an optional callback to stream in `add_next_tick_callback` or invoke `push_notebook`.
+    Takes an optional document to stream in `add_next_tick_callback` or
+    a cell handle to invoke `push_notebook` on.
     """
     while True:
         res = read(response)
         if res:
-            if cb:
-                cb(lambda: cds.stream(res.data.data))
+            if doc: # if we're running in a thread, update on next tick
+                doc.add_next_tick_callback(lambda: cds.stream(res.data.data))
             else:
                 cds.stream(res.data.data)
+            if cell: # if we're running in a notebook, push update
+                push_notebook(handle=cell)
         else:
             break
 
