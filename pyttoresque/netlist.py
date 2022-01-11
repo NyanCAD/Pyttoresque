@@ -1,5 +1,6 @@
 from typing import NamedTuple
 from ibmcloudant.cloudant_v1 import CloudantV1
+from ibm_cloud_sdk_core.api_exception import ApiException
 from collections import deque, namedtuple
 import json
 
@@ -33,7 +34,10 @@ class Modeldict(dict):
         self.db = db
 
     def __missing__(self, key):
-        doc = service.get_document(self.db, key).get_result()
+        try:
+            doc = service.get_document(self.db, key).get_result()
+        except ApiException:
+            raise KeyError(key)
         self[key] = doc
         return doc
 
@@ -216,52 +220,69 @@ def spicename(n):
     return n.split('-',)[-1]
 
 
-def circuit_spice(docs, models):
+def circuit_spice(docs, models, declarations):
     nl = netlist(docs, models)
     cir = []
     for id, ports in nl.items():
         dev = docs[id]
         cell = dev['cell']
-        model = dev.get('props', {}).get('model', '')
+        mname = dev.get('props', {}).get('model', '')
         name = dev.get('name') or spicename(id)
         def p(p): return spicename(ports[p])
         propstr = print_props(dev.get('props', {}))
         if cell == "resistor":
-            cir.append(f"R{name} {p('P')} {p('N')} {propstr}")
+            ports = ' '.join(p(c) for c in ['P', 'N'])
+            templ = "R{name} {ports} {properties}"
         elif cell == "capacitor":
-            cir.append(f"C{name} {p('P')} {p('N')} {propstr}")
+            ports = ' '.join(p(c) for c in ['P', 'N'])
+            templ = "C{name} {ports} {properties}"
         elif cell == "inductor":
-            cir.append(f"L{name} {p('P')} {p('N')} {propstr}")
+            ports = ' '.join(p(c) for c in ['P', 'N'])
+            templ = "L{name} {ports} {properties}"
         elif cell == "diode":
-            cir.append(f"D{name} {p('P')} {p('N')} {propstr}")
+            ports = ' '.join(p(c) for c in ['P', 'N'])
+            templ = "D{name} {ports} {properties}"
         elif cell == "vsource":
-            cir.append(f"V{name} {p('P')} {p('N')} {propstr}")
+            ports = ' '.join(p(c) for c in ['P', 'N'])
+            templ = "V{name} {ports} {properties}"
         elif cell == "isource":
-            cir.append(f"I{name} {p('P')} {p('N')} {propstr}")
+            ports = ' '.join(p(c) for c in ['P', 'N'])
+            templ = "I{name} {ports} {properties}"
         elif cell in {"pmos", "nmos"}:
-            cir.append(
-                f"M{name} {p('D')} {p('G')} {p('S')} {p('B')} {propstr}")
+            ports = ' '.join(p(c) for c in ['D', 'G', 'S', 'B'])
+            templ = "M{name} {ports} {properties}"
         else:  # subcircuit
             m = models[f"models:{cell}"]
             ports = ' '.join(p(c[2]) for c in m['conn'])
-            cir.append(f"X{name} {ports} {model}")  # todo
+            templ = "X{name} {ports} {properties}"
+
+        # a spice type model can overwrite its reference
+        # for example if the mosfet is really a subcircuit
+        try:
+            m = models[f"models:{cell}"]["models"][mname]
+            templ = m['reftempl']
+            declarations.add(m['decltempl'])
+        except KeyError:
+            pass
+
+        cir.append(templ.format(name=name, ports=ports, properties=propstr))
     return '\n'.join(cir)
 
 
 def spice_netlist(name, schem, models):
-    ckt = []
-    ckt.append(f"* {name}")
+    declarations = set()
     for subname, docs in schem.items():
         if name == subname: continue
         _id = SchemId.from_string(subname)
         mod = models[f"models:{_id.cell}"]
         ports = ' '.join(c[2] for c in mod['conn'])
-        body = circuit_spice(docs, models)
-        ckt.append(f".subckt {_id.model} {ports}")
-        ckt.append(body)
-        ckt.append(f".ends {_id.model}")
+        body = circuit_spice(docs, models, declarations)
+        declarations.add(f".subckt {_id.model} {ports}\n{body}\n.ends {_id.model}") # parameters??
 
-    body = circuit_spice(schem[name], models)
+    body = circuit_spice(schem[name], models, declarations)
+    ckt = []
+    ckt.append(f"* {name}")
+    ckt.extend(declarations)
     ckt.append(body)
     ckt.append(".end\n")
 
@@ -272,6 +293,6 @@ if __name__ == "__main__":
     name = "comparator$sky130_1v8_120mhz"
     models = Modeldict()
     seq, docs = get_all_schem_docs(name)
-    print(docs)
-    print(netlist(docs[name], models))
+    # print(docs)
+    # print(netlist(docs[name], models))
     print(spice_netlist(name, docs, models))
