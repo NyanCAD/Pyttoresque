@@ -9,21 +9,21 @@ dbdefault = "schematics"
 
 
 def shape_ports(shape):
-    for x, s in enumerate(shape):
-        for y, c in enumerate(s):
+    for y, s in enumerate(shape):
+        for x, c in enumerate(s):
             if c != ' ':
                 yield x, y, c
 
 
 mosfet_shape = list(shape_ports([
-    " D"
-    "GB"
-    " S"
+    " D",
+    "GB",
+    " S",
 ]))
 
 twoport_shape = list(shape_ports([
-    "P"
-    "N"
+    "P",
+    "N",
 ]))
 
 
@@ -75,8 +75,9 @@ def get_all_schem_docs(name, db=dbdefault):
         _id = SchemId(dev["cell"], dev.get('props', {}).get('model'), None, None)
         if _id.model and _id.schem not in schem:
             seq, docs = get_schem_docs(_id.schem, db)
-            schem[_id.schem] = docs
-            devs.extend(docs.values())
+            if docs:
+                schem[_id.schem] = docs
+                devs.extend(docs.values())
     return seq, schem
 
 def doc_selector(schem):
@@ -168,9 +169,11 @@ def port_index(docs, models):
 def netlist(docs, models):
     device_index, wire_index = port_index(docs, models)
     nl = {}
+    netnum = 0
     while wire_index:  # while there are devices left
         loc, locdevs = wire_index.popitem()  # take one
-        netname = None
+        netname = f"net{netnum}"
+        netnum+=1
         net = deque(locdevs)
         netdevs = {}
         while net:
@@ -182,16 +185,18 @@ def netlist(docs, models):
                         net.extend(wire_index.pop(ploc))
                     if ploc in device_index:
                         p, dev = device_index[ploc]
-                        netdevs[dev['_id']] = p
+                        netdevs.setdefault(dev['_id'], []).append(p)
             elif cell == 'label':
                 netname = doc.get('name')
             else:
                 raise ValueError(cell)
-        nl[netname] = netdevs
+        for k, v in netdevs.items():
+            nl.setdefault(netname, {}).setdefault(k, []).extend(v)
     inl = {}
     for net, devs in nl.items():
-        for dev, port in devs.items():
-            inl.setdefault(dev, {})[port] = net
+        for dev, pts in devs.items():
+            for port in pts:
+                inl.setdefault(dev, {})[port] = net
     return inl
 
 
@@ -235,7 +240,7 @@ def circuit_spice(docs, models):
             cir.append(f"I{name} {p('P')} {p('N')} {propstr}")
         elif cell in {"pmos", "nmos"}:
             cir.append(
-                f"M{name} {p('D')} {p('G')} {p('S')} {p('B')} {model} {propstr}")
+                f"M{name} {p('D')} {p('G')} {p('S')} {p('B')} {propstr}")
         else:  # subcircuit
             m = models[f"models:{cell}"]
             ports = ' '.join(p(c[2]) for c in m['conn'])
@@ -264,8 +269,9 @@ def spice_netlist(name, schem, models):
 
 
 if __name__ == "__main__":
+    name = "comparator$sky130_1v8_120mhz"
     models = Modeldict()
-    seq, docs = get_all_schem_docs("top$top")
-    # print(docs.keys())
-    # print(netlist(docs, models))
-    print(spice_netlist("top$top", docs, models))
+    seq, docs = get_all_schem_docs(name)
+    print(docs)
+    print(netlist(docs[name], models))
+    print(spice_netlist(name, docs, models))

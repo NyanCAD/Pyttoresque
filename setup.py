@@ -21,7 +21,7 @@ setuptools.setup(
         'ibmcloudant',
         'pycapnp',
         'bokeh',
-        'numpy'
+        'numpy',
     ],
     package_data={
         'pyttoresque': ['simserver/Simulator.capnp'],
