@@ -24,7 +24,7 @@ setuptools.setup(
         'numpy',
     ],
     package_data={
-        'pyttoresque': ['simserver/Simulator.capnp'],
+        'pyttoresque': ['api/Simulator.capnp'],
     },
     python_requires='>=3.6',
     use_scm_version=True,
