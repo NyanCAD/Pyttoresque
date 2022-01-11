@@ -1,6 +1,6 @@
 from os import name
 import capnp
-from pyttoresque.simserver.Simulator_capnp import Ngspice, Xyce, Cxxrtl
+from pyttoresque.api.Simulator_capnp import Ngspice, Xyce, Cxxrtl
 from bokeh.models import ColumnDataSource
 from bokeh.io import push_notebook
 from collections import namedtuple
