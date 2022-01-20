@@ -22,9 +22,19 @@ setuptools.setup(
         'pycapnp',
         'bokeh',
         'numpy',
+        'jupyterlab'
     ],
     package_data={
-        'pyttoresque': ['api/Simulator.capnp'],
+        'pyttoresque': [
+            'api/Simulator.capnp',
+            'app/static/*',
+            'app/templates/*',
+        ],
+    },
+    entry_points={
+        'console_scripts': [
+            'jupyter-mosaic = pyttoresque.app:main'
+        ]
     },
     python_requires='>=3.6',
     use_scm_version=True,
