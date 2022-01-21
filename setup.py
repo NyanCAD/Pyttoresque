@@ -22,7 +22,8 @@ setuptools.setup(
         'pycapnp',
         'bokeh',
         'numpy',
-        'jupyterlab'
+        'jupyterlab',
+        'jupyter_bokeh'
     ],
     package_data={
         'pyttoresque': [
