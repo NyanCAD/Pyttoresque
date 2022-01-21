@@ -137,11 +137,24 @@ def live_schem_docs(name, callback, db=dbdefault):
             callback(schem)
 
 
+def rotate(shape, transform, devx, devy):
+    a, b, c, d, e, f = transform
+    width = max(max(x, y) for x, y, _ in shape)+1
+    mid = width/2-0.5
+    res = {}
+    for px, py, p in shape:
+        x = px-mid
+        y = py-mid
+        nx = a*x+c*y+e
+        ny = b*x+d*y+f
+        res[round(devx+nx+mid), round(devy+ny+mid)] = p
+    return res
 
-def ports(doc, models):
+def getports(doc, models):
     cell = doc['cell']
     x = doc['x']
     y = doc['y']
+    tr = doc.get('transform', [1, 0, 0, 1, 0, 0])
     if cell == 'wire':
         rx = doc['rx']
         ry = doc['ry']
@@ -150,11 +163,11 @@ def ports(doc, models):
     elif cell == 'label':
         return {(x, y): doc['name']}
     elif cell in {'nmos', 'pmos'}:
-        return {(x+px, y+py): p for px, py, p in mosfet_shape}
+        return rotate(mosfet_shape, tr, x, y)
     elif cell in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
-        return {(x+px, y+py): p for px, py, p in twoport_shape}
+        return rotate(twoport_shape, tr, x, y)
     else:
-        return {(x+px, y+py): p for px, py, p in models[f"models:{cell}"]['conn']}
+        return rotate(models[f"models:{cell}"]['conn'], tr, x, y)
 
 
 def port_index(docs, models):
@@ -162,7 +175,7 @@ def port_index(docs, models):
     device_index = {}
     for doc in docs.values():
         cell = doc['cell']
-        for (x, y), p in ports(doc, models).items():
+        for (x, y), p in getports(doc, models).items():
             if cell in {'wire', 'label'}:
                 wire_index.setdefault((x, y), []).append(doc)
             else:
@@ -184,7 +197,7 @@ def netlist(docs, models):
             doc = net.popleft()
             cell = doc['cell']
             if cell == 'wire':
-                for ploc in ports(doc, models).keys():
+                for ploc in getports(doc, models).keys():
                     if ploc in wire_index:
                         net.extend(wire_index.pop(ploc))
                     if ploc in device_index:
@@ -290,7 +303,8 @@ def spice_netlist(name, schem, models):
 
 
 if __name__ == "__main__":
-    name = "comparator$sky130_1v8_120mhz"
+    # name = "comparator$sky130_1v8_120mhz"
+    name = "top$top"
     models = Modeldict()
     seq, docs = get_all_schem_docs(name)
     # print(docs)
