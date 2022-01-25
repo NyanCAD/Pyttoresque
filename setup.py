@@ -39,6 +39,10 @@ setuptools.setup(
             "etc/jupyter/jupyter_server_config.d",
             ["jupyter-config/jupyter_server_config.d/pyttoresque.json"]
         ),
+        (
+            "etc/jupyter/jupyter_notebook_config.d",
+            ["jupyter-config/jupyter_notebook_config.d/pyttoresque.json"]
+        ),
     ],
     entry_points={
         'console_scripts': [

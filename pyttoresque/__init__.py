@@ -7,3 +7,6 @@ def _jupyter_server_extension_points():
             "app": Mosaic
         }
     ]
+
+# notebook server compat
+load_jupyter_server_extension = Mosaic.load_classic_server_extension

@@ -39,7 +39,8 @@ class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
         bokehapps = {
             "/simulate": Application(ScriptHandler(filename=os.path.join(HERE, "simulate.py")))
         }
-        self.bokehserver = Server(bokehapps, io_loop=self.serverapp.io_loop, allow_websocket_origin=["*"])
+        io_loop = getattr(self.serverapp, "io_loop", None)
+        self.bokehserver = Server(bokehapps, io_loop=io_loop, allow_websocket_origin=["*"])
         self.bokehserver.start()
 
         self.handlers.append(("/libman", LibmanHandler))
