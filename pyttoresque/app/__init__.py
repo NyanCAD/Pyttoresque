@@ -1,8 +1,7 @@
 import os
 from jupyter_server.base.handlers import JupyterHandler
 from jupyter_server.extension.handler import ExtensionHandlerJinjaMixin, ExtensionHandlerMixin
-from jupyterlab_server import LabServerApp
-from bokeh.embed import server_document
+from jupyter_server.extension.application import ExtensionApp, ExtensionAppJinjaMixin
 from bokeh.server.server import Server
 from bokeh.application.handlers import ScriptHandler
 from bokeh.application import Application
@@ -30,32 +29,21 @@ class MosaicHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterHa
             )
         )
 
-class BokehHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterHandler):
-    def get(self):
-        script = server_document()
-        return self.write(
-            self.render_template(
-                "bokeh.html",
-                script=script,
-            )
-        )
-
-
-class Mosaic(LabServerApp):
+class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
     name = "mosaic"
     default_url = "/libman"
-    static_dir = os.path.join(HERE, "static")
-    templates_dir = os.path.join(HERE, "templates")
+    static_paths = [os.path.join(HERE, "static")]
+    template_paths = [os.path.join(HERE, "templates")]
 
     def initialize_handlers(self):
-        origin = f"{self.serverapp.ip}:{self.serverapp.port}"
-        app = Application(ScriptHandler(filename=os.path.join(HERE, "simulate.py")))
-        self.bokehserver = Server(app, allow_websocket_origin=[origin])
+        bokehapps = {
+            "/simulate": Application(ScriptHandler(filename=os.path.join(HERE, "simulate.py")))
+        }
+        self.bokehserver = Server(bokehapps, io_loop=self.serverapp.io_loop, allow_websocket_origin=["*"])
         self.bokehserver.start()
 
         self.handlers.append(("/libman", LibmanHandler))
         self.handlers.append(("/editor", MosaicHandler))
-        self.handlers.append(("/simulate", BokehHandler))
 
         super().initialize_handlers()
 

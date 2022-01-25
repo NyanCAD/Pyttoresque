@@ -23,7 +23,8 @@ setuptools.setup(
         'bokeh',
         'numpy',
         'jupyterlab',
-        'jupyter_bokeh'
+        'jupyter_bokeh',
+        'jupyter-server-proxy'
     ],
     package_data={
         'pyttoresque': [
@@ -32,6 +33,13 @@ setuptools.setup(
             'app/templates/*',
         ],
     },
+    include_package_data=True,
+    data_files=[
+        (
+            "etc/jupyter/jupyter_server_config.d",
+            ["jupyter-config/jupyter_server_config.d/pyttoresque.json"]
+        ),
+    ],
     entry_points={
         'console_scripts': [
             'jupyter-mosaic = pyttoresque.app:main'
