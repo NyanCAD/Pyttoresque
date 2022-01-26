@@ -1,6 +1,6 @@
 from os import name
 import capnp
-from pyttoresque.api.Simulator_capnp import Ngspice, Xyce, Cxxrtl
+from pyttoresque.api.Simulator_capnp import Ngspice, Xyce, Cxxrtl, AcType
 from bokeh.models import ColumnDataSource
 from bokeh.io import push_notebook
 from collections import namedtuple
@@ -35,7 +35,7 @@ def loadFiles(sim, *names):
 
 
 def map_complex(vec):
-    return np.array(complex(v.real, v.imag) for v in vec.complex)
+    return np.fromiter((complex(v.real, v.imag) for v in vec), complex)
 
 
 Result = namedtuple("Result", ("scale", "data"))
@@ -54,12 +54,15 @@ def read(response):
                 arr = getattr(vec.data, vec.data.which())
                 if arr:
                     if vec.data.which() == 'complex':
-                        data[vec.name] = map_complex(arr)
+                        # horrible hack because Bokeh doesn't like complex numbers
+                        comp = map_complex(arr)
+                        data[vec.name+"_mag"] = np.abs(comp)
+                        data[vec.name+"_phase"] = np.angle(comp)
                     else:
                         data[vec.name] = np.array(arr)
 
         if data:
-            return Result(res.scale, ColumnDataSource(data))
+            return Result(res.scale, data)
         if not res.more:
             return
 
@@ -70,13 +73,16 @@ def stream(response, cds, *, doc=None, cell=None):
     Takes an optional document to stream in `add_next_tick_callback` or
     a cell handle to invoke `push_notebook` on.
     """
+    def push(data):
+        # this closure will capture the data so it doesn't change
+        doc.add_next_tick_callback(lambda: cds.stream(data))
     while True:
         res = read(response)
         if res:
             if doc: # if we're running in a thread, update on next tick
-                doc.add_next_tick_callback(lambda: cds.stream(res.data.data))
+                push(res.data)
             else:
-                cds.stream(res.data.data)
+                cds.stream(res.data)
             if cell: # if we're running in a notebook, push update
                 push_notebook(handle=cell)
         else:
@@ -91,7 +97,7 @@ def readAll(response):
     while True:
         newres = read(response)
         if newres:
-            res.data.stream(newres.data.data)
+            res.data.stream(newres.data)
         else:
             break
     return res
