@@ -3,7 +3,7 @@ from jupyter_server.base.handlers import JupyterHandler
 from jupyter_server.extension.handler import ExtensionHandlerJinjaMixin, ExtensionHandlerMixin
 from jupyter_server.extension.application import ExtensionApp, ExtensionAppJinjaMixin
 from bokeh.server.server import Server
-from bokeh.application.handlers import ScriptHandler
+from bokeh.application.handlers import DirectoryHandler
 from bokeh.application import Application
 
 HERE = os.path.dirname(__file__)
@@ -37,7 +37,7 @@ class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
 
     def initialize_handlers(self):
         bokehapps = {
-            "/simulate": Application(ScriptHandler(filename=os.path.join(HERE, "simulate.py")))
+            "/app": Application(DirectoryHandler(filename=HERE))
         }
         io_loop = getattr(self.serverapp, "io_loop", None)
         self.bokehserver = Server(bokehapps, io_loop=io_loop, allow_websocket_origin=["*"])

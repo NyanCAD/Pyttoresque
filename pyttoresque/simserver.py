@@ -56,7 +56,7 @@ def read(response):
                     if vec.data.which() == 'complex':
                         # horrible hack because Bokeh doesn't like complex numbers
                         comp = map_complex(arr)
-                        data[vec.name+"_mag"] = np.abs(comp)
+                        data[vec.name] = np.abs(comp)
                         data[vec.name+"_phase"] = np.angle(comp)
                     else:
                         data[vec.name] = np.array(arr)

@@ -1,0 +1,95 @@
+body, html {
+    padding: 0;
+    margin: 0;
+}
+
+h1 {
+    text-align: left;
+    font: 500 22px/28px 'Roboto', sans-serif;
+    letter-spacing: 0.88px;
+    color: #222222;
+    opacity: 1;
+    margin-bottom: 0;
+    margin-top: 20px;
+}
+
+.bk-root {
+    font: 400 16px/18px 'Roboto', sans-serif;
+}
+.bk-root .horizontal .bk-input-group {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+.bk-root .horizontal .bk-input-group label {
+    flex: 0 0 200px;
+}
+
+.bk-root .bk-input-group label {
+    text-align: left;
+    font: 500 16px/18px 'Roboto', sans-serif;
+    letter-spacing: 0.72px;
+    color: #222222;
+    opacity: 0.65;
+}
+
+.bk-root .bk-input-group input,
+.bk-root .bk-input-group select {
+    background: #00000008 0% 0% no-repeat padding-box;
+    border: 2px solid #2222220D;
+    border-radius: 5px;
+    padding: 10px 15px;
+    opacity: 1;
+    text-align: left;
+    font: 400 16px/18px 'Roboto', sans-serif;
+    letter-spacing: 0.72px;
+    color: #22222259;
+}
+
+.bk-root .bk-headers-wrapper {
+    padding: 20px;
+    margin-right: 20px;
+}
+.bk-root .bk-tabs-header.bk-left .bk-headers {
+    align-items: stretch;
+}
+.bk-root .bk-tabs-header.bk-left .bk-tab {
+    border: none;
+    text-align: left;
+    font: 500 16px/18px 'Roboto', sans-serif;
+    letter-spacing: 0.72px;
+    color: #222222;
+    opacity: 0.6;
+    padding: 10px;
+}
+.bk-root .bk-tabs-header.bk-left .bk-tab.bk-active {
+    background: #0E1A32 0% 0% no-repeat padding-box;
+    border-radius: 5px;
+    opacity: 1;
+    text-align: left;
+    font: 500 16px/18px 'Roboto', sans-serif;
+    letter-spacing: 0.72px;
+    color: #FFFFFF;
+    opacity: 1;
+}
+
+.bk-root .bk-btn {
+    background: #0E1A32 0% 0% no-repeat padding-box;
+    border-radius: 5px;
+    font: 500 16px/18px 'Roboto', sans-serif;
+    letter-spacing: 0.9px;
+    color: #FFFFFF;
+    padding: 15px;
+    text-transform: uppercase;
+}
+.bk-root .bk-btn:hover {
+    background: #0E1A32 0% 0% no-repeat padding-box;
+    color: #dddddd;
+}
+
+.bk-root .wizard-controls {
+    outline: 1px solid #e6e6e6;
+}
+.bk-root .wizard-controls > .bk {
+    padding: 20px;
+}
