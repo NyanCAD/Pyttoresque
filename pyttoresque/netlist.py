@@ -1,12 +1,9 @@
-from typing import NamedTuple
 from ibmcloudant.cloudant_v1 import CloudantV1
 from ibm_cloud_sdk_core.api_exception import ApiException
+from ibm_cloud_sdk_core.authenticators import NoAuthAuthenticator, BasicAuthenticator
 from collections import deque, namedtuple
 import json
-
-service = CloudantV1.new_instance()
-
-dbdefault = "schematics"
+import urllib.parse as ulp
 
 
 def shape_ports(shape):
@@ -29,13 +26,17 @@ twoport_shape = list(shape_ports([
 
 
 class Modeldict(dict):
-    def __init__(self, *args, db=dbdefault, **kwargs):
+    def __init__(self, *args, service, db=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.db = db
+        self.service = service
+        if db == None:
+            self.db = service.dbdefault
+        else:
+            self.db = db
 
     def __missing__(self, key):
         try:
-            doc = service.get_document(self.db, key).get_result()
+            doc = self.service.get_document(self.db, key).get_result()
         except ApiException:
             raise KeyError(key)
         self[key] = doc
@@ -58,32 +59,6 @@ class SchemId(namedtuple("SchemId", ["cell", "model", "device", "key"])):
         return f"{self.cell}${self.model}"
 
 
-def get_schem_docs(name, db=dbdefault):
-    res = service.post_all_docs(
-        db=db,
-        include_docs=True,
-        startkey=f"{name}:",
-        endkey=f"{name}:\ufff0",
-        update_seq=True
-    ).get_result()
-    return res['update_seq'], {row['id']: row['doc'] for row in res['rows']}
-
-
-def get_all_schem_docs(name, db=dbdefault):
-    schem = {}
-    seq, docs = get_schem_docs(name, db)
-    schem[name] = docs
-    devs = deque(docs.values())
-    while devs:
-        dev = devs.popleft()
-        _id = SchemId(dev["cell"], dev.get('props', {}).get('model'), None, None)
-        if _id.model and _id.schem not in schem:
-            seq, docs = get_schem_docs(_id.schem, db)
-            if docs:
-                schem[_id.schem] = docs
-                devs.extend(docs.values())
-    return seq, schem
-
 def doc_selector(schem):
     ors = [{"_id": {
             "$gt": name+":",
@@ -91,50 +66,97 @@ def doc_selector(schem):
         }} for name in schem.keys()]
     return {"$or": ors}
 
-def update_schem(seq, schem, db=dbdefault):
-    sel = doc_selector(schem)
-    result = service.post_changes(
-        db=db,
-        filter="_selector",
-        since=seq,
-        include_docs=True,
-        selector=sel).get_result()
 
-    for change in result['results']:
-        doc = change['doc']
-        _id = SchemId.from_string(doc["_id"])
-        if doc.get('_deleted', False):
-            del schem[_id.schem][doc["_id"]]
+class SchematicService(CloudantV1):
+    dbdefault = "schematics"
+
+    @classmethod
+    def from_url(cls, url):
+        up = ulp.urlparse(url)
+        if up.username or up.password:
+            if up.port:
+                netloc = f"{up.hostname}:{up.port}"
+            else:
+                netloc = up.hostname
+            url = ulp.urlunparse(up._replace(netloc=netloc))
+            auth = BasicAuthenticator(up.username, up.password)
         else:
-            schem[_id.schem][doc["_id"]] = doc
+            auth = NoAuthAuthenticator()
 
-    seq = result['last_seq']
-    return seq, schem
+        serv = cls(auth)
+        serv.set_service_url(url)
+        return serv
+
+    def get_schem_docs(self, name, db=dbdefault):
+        res = self.post_all_docs(
+            db=db,
+            include_docs=True,
+            startkey=f"{name}:",
+            endkey=f"{name}:\ufff0",
+            update_seq=True
+        ).get_result()
+        return res['update_seq'], {row['id']: row['doc'] for row in res['rows']}
 
 
-def live_schem_docs(name, callback, db=dbdefault):
-    seq, schem = get_all_schem_docs(name, db)
-    callback(schem)
+    def get_all_schem_docs(self, name, db=dbdefault):
+        schem = {}
+        seq, docs = self.get_schem_docs(name, db)
+        schem[name] = docs
+        devs = deque(docs.values())
+        while devs:
+            dev = devs.popleft()
+            _id = SchemId(dev["cell"], dev.get('props', {}).get('model'), None, None)
+            if _id.model and _id.schem not in schem:
+                seq, docs = self.get_schem_docs(_id.schem, db)
+                if docs:
+                    schem[_id.schem] = docs
+                    devs.extend(docs.values())
+        return seq, schem
 
-    sel = doc_selector(schem)
-    result = service.post_changes_as_stream(
-        db=db,
-        feed='continuous',
-        heartbeat=5000,
-        filter="_selector",
-        since=seq,
-        include_docs=True,
-        selector=sel).get_result()
+    def update_schem(self, seq, schem, db=dbdefault):
+        sel = doc_selector(schem)
+        result = self.post_changes(
+            db=db,
+            filter="_selector",
+            since=seq,
+            include_docs=True,
+            selector=sel).get_result()
 
-    for chunk in result.iter_lines():
-        if chunk:
-            doc = json.loads(chunk)["doc"]
+        for change in result['results']:
+            doc = change['doc']
             _id = SchemId.from_string(doc["_id"])
             if doc.get('_deleted', False):
                 del schem[_id.schem][doc["_id"]]
             else:
                 schem[_id.schem][doc["_id"]] = doc
-            callback(schem)
+
+        seq = result['last_seq']
+        return seq, schem
+
+
+    def live_schem_docs(self, name, callback, db=dbdefault):
+        seq, schem = self.get_all_schem_docs(name, db)
+        callback(schem)
+
+        sel = doc_selector(schem)
+        result = self.post_changes_as_stream(
+            db=db,
+            feed='continuous',
+            heartbeat=5000,
+            filter="_selector",
+            since=seq,
+            include_docs=True,
+            selector=sel).get_result()
+
+        for chunk in result.iter_lines():
+            if chunk:
+                doc = json.loads(chunk)["doc"]
+                _id = SchemId.from_string(doc["_id"])
+                if doc.get('_deleted', False):
+                    del schem[_id.schem][doc["_id"]]
+                else:
+                    schem[_id.schem][doc["_id"]] = doc
+                callback(schem)
 
 
 def rotate(shape, transform, devx, devy):
@@ -149,6 +171,7 @@ def rotate(shape, transform, devx, devy):
         ny = b*x+d*y+f
         res[round(devx+nx+mid), round(devy+ny+mid)] = p
     return res
+
 
 def getports(doc, models):
     cell = doc['cell']
@@ -303,10 +326,11 @@ def spice_netlist(name, schem, models):
 
 
 if __name__ == "__main__":
+    service = SchematicService.new_instance()
     # name = "comparator$sky130_1v8_120mhz"
     name = "top$top"
-    models = Modeldict()
-    seq, docs = get_all_schem_docs(name)
+    models = Modeldict(service=service)
+    seq, docs = service.get_all_schem_docs(name)
     # print(docs)
     # print(netlist(docs[name], models))
     print(spice_netlist(name, docs, models))

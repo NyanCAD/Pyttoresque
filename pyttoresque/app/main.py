@@ -48,19 +48,24 @@ scale = "time"
 
 ##### simulator selection #####
 
-simulator_h = header("Configuration")
 params = doc.session_context.request.arguments
+getparam = lambda p: b''.join(params.get(p, [])).decode()
+
+simulator_h = header("Configuration")
 sim_doc = Paragraph(text="""
 Configure how and what to simulate. Different simulators have different performance characteristics but also different compatibility with device models.
 If the simulation host is set to "localhost", a local server will be started automatically if none is available.
 """)
-schem = b''.join(params.get("schem", [])).decode()
-schemname = TextInput(title="Schematic", value=schem, disabled=schem!="")
+schemparam = getparam("schem")
+dbparam = getparam("db")
+dbdefault = "http://localhost:5984"
+schemname = TextInput(title="Schematic", value=schemparam, disabled=schemparam!="")
+dbname = TextInput(title="Database", value=dbparam or dbdefault, disabled=dbparam!="")
 simulator_type = Select(title="Simulator", options=["NgSpice", "Xyce"], value="NgSpice")
 simulator_host = TextInput(title="Host", value="localhost")
 simulator_port = NumericInput(title="Port", value=5923)
 
-sim_inputs = column(simulator_h, sim_doc, schemname, simulator_type, simulator_host, simulator_port, Spacer(sizing_mode="stretch_both"))
+sim_inputs = column(simulator_h, sim_doc, schemname, dbname, simulator_type, simulator_host, simulator_port, Spacer(sizing_mode="stretch_both"))
 sim_tab = Panel(child=sim_inputs, title="Configuration")
 
 def sim_connect():
@@ -94,15 +99,15 @@ def sim_once(sim, cb):
     # tricky, we want to reuse this but it currently doesn't update
     # so if it'd be global and a model was updated, it'd be wrong
     # so now it'll only request each model once per simulation at least
-    m = netlist.Modeldict()
-    seq, schem = netlist.get_all_schem_docs(name)
+    service = netlist.SchematicService.from_url(dbname.value)
+    m = netlist.Modeldict(service=service)
+    seq, schem = service.get_all_schem_docs(name)
     spice = netlist.spice_netlist(name, schem, m)
     fileset = sim.loadFiles([{'name': safename+'.cir', 'contents': spice}])
     res = cb(fileset)
     scale, data = simserver.read(res)
     cds.data = data
     if cds.column_names != traces.labels:
-        print(cds.column_names)
         traces.labels = cds.column_names
         traces.active = []
     simserver.stream(res, cds)
@@ -185,7 +190,6 @@ def plot_active(prop, old, new):
         browser.children[1] = fig
         for col in new:
             color = Colorblind[8][col%8]
-            print(cds.column_names)
             key = cds.column_names[col]
             fig.line(scale, key, source=cds, color=color)
     elif scale.lower() == "frequency":
