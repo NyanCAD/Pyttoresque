@@ -4,12 +4,10 @@ import re
 import os
 from bokeh.io import curdoc
 from bokeh.layouts import column, row, Spacer
-from bokeh.models import ColumnDataSource, Button, NumericInput, Panel, Tabs, Paragraph, Select, TextInput, RadioButtonGroup, CheckboxGroup, Div
+from bokeh.models import *
 from bokeh.plotting import figure
 from bokeh.palettes import Colorblind
 from pyttoresque import simserver, netlist
-from bokeh.themes import Theme
-
 
 doc = curdoc()
 
@@ -17,9 +15,9 @@ class Wizard:
     def __init__(self, children, next="Simulate", prev="Edit"):
         self.children = children
         self.active = 0
-        self.nextbtn = Button(label=next, sizing_mode="fixed")
+        self.nextbtn = Button(label=next)
         self.nextbtn.on_click(self.next)
-        self.prevbtn = Button(label=prev, disabled=True, sizing_mode="fixed")
+        self.prevbtn = Button(label=prev, disabled=True)
         self.prevbtn.on_click(self.prev)
         controls = row(self.prevbtn, Spacer(sizing_mode="stretch_width"), self.nextbtn, sizing_mode="stretch_width", css_classes=["wizard-controls"])
         self.widget = column(children[0], controls, sizing_mode="stretch_both", spacing=1, css_classes=["wizard"])
@@ -52,25 +50,17 @@ scale = "time"
 
 simulator_h = header("Configuration")
 params = doc.session_context.request.arguments
-schemname = TextInput(title="Schematic", value=b''.join(params.get("schem", [])).decode())
+sim_doc = Paragraph(text="""
+Configure how and what to simulate. Different simulators have different performance characteristics but also different compatibility with device models.
+If the simulation host is set to "localhost", a local server will be started automatically if none is available.
+""")
+schem = b''.join(params.get("schem", [])).decode()
+schemname = TextInput(title="Schematic", value=schem, disabled=schem!="")
 simulator_type = Select(title="Simulator", options=["NgSpice", "Xyce"], value="NgSpice")
-simulator_location = RadioButtonGroup(labels=["local", "remote"], active=0)
-simulator_host = TextInput(title="Host", value="localhost", disabled=True)
+simulator_host = TextInput(title="Host", value="localhost")
 simulator_port = NumericInput(title="Port", value=5923)
 
-def hostdisabler(attr, old, new):
-    if new==0:
-        simulator_host.disabled = True
-        simulator_host.value = "localhost"
-    else:
-        simulator_host.disabled = False
-        # if a local simulator is running, terminate it
-        if simproc and simproc.poll()==None:
-            simproc.terminate()
-
-simulator_location.on_change('active', hostdisabler)
-
-sim_inputs = column(simulator_h, schemname, simulator_type, simulator_location, simulator_host, simulator_port, Spacer(sizing_mode="stretch_both"))
+sim_inputs = column(simulator_h, sim_doc, schemname, simulator_type, simulator_host, simulator_port, Spacer(sizing_mode="stretch_both"))
 sim_tab = Panel(child=sim_inputs, title="Configuration")
 
 def sim_connect():
@@ -89,7 +79,7 @@ def sim_connect():
         return simserver.connect(host, port, sim)
     except ConnectionRefusedError:
         # if we're doing a local simulation, start a new server
-        if simulator_location.active==0:
+        if simulator_host.value=="localhost":
             print("starting new local server")
             simproc = Popen([simcmd, str(simulator_port.value)])
             sleep(1) # wait a bit for the server to start :(
@@ -111,6 +101,10 @@ def sim_once(sim, cb):
     res = cb(fileset)
     scale, data = simserver.read(res)
     cds.data = data
+    if cds.column_names != traces.labels:
+        print(cds.column_names)
+        traces.labels = cds.column_names
+        traces.active = []
     simserver.stream(res, cds)
 
 ##### transient simulation #####
@@ -177,10 +171,10 @@ tabs = Tabs(tabs=[tran_tab, ac_tab, dc_tab, noise_tab, dct_tab, op_tab, sim_tab]
 
 traces = CheckboxGroup()
 tracecolumn = column(traces, Spacer(sizing_mode="stretch_height"))
-def set_traces(prop, old, new):
-    traces.labels = list(new)
+# def set_traces(prop, old, new):
+#     traces.labels = list(new)
 # cds.on_change('column_names', set_traces)
-cds.on_change('data', set_traces)
+# cds.on_change('data', set_traces)
 
 fig = figure(title="Simulation Results", output_backend="webgl", sizing_mode="stretch_both")
 browser = row([tracecolumn, fig], sizing_mode="stretch_height")
@@ -210,8 +204,6 @@ def plot_active(prop, old, new):
 
 traces.on_change('active', plot_active)
 
-
-
 root = Wizard(children=[tabs, browser])
 
 sweep_types = {
@@ -225,6 +217,10 @@ simcmds = [
     lambda fs: fs.commands.tran(t_step.value, t_stop.value, t_start.value, vectors),
     lambda fs: fs.commands.ac(sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors)
 ]
+
+def disable_next(prop, old, new):
+    root.nextbtn.disabled = new >= len(simcmds)
+tabs.on_change('active', disable_next)
 
 def run_simulation(e):
     sim = sim_connect()

@@ -6,3 +6,5 @@ attrs:
     spacing: 20
   Tabs:
     css_classes: ["mytabs"]
+  Spacer:
+    css_classes: ["spacer"]

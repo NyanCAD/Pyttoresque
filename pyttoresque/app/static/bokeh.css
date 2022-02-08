@@ -93,3 +93,7 @@ h1 {
 .bk-root .wizard-controls > .bk {
     padding: 20px;
 }
+
+.bk-root .bk.spacer {
+    display: none !important;
+}
