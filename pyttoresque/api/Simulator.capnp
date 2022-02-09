@@ -38,7 +38,13 @@ enum AcType {
 }
 
 interface Result {
-    read @0 () -> (scale :Text, more :Bool, data :List(Vector));
+    read @0 () -> (more :Bool, data :List(Vectors));
+}
+
+struct Vectors {
+    name @0 :Text;
+    scale @1 :Text;
+    data @2 :List(Vector);
 }
 
 struct Vector {
