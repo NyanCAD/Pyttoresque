@@ -1,8 +1,4 @@
-#include <stdio.h>     // perror, printf
-#include <stdlib.h>    // exit, atoi
-#include <unistd.h>    // read, write, close
-#include <arpa/inet.h> // sockaddr_in, AF_INET, SOCK_STREAM, INADDR_ANY, socket etc...
-#include <string.h>    // memset
+#include <string> 
 
 #include "api/Simulator.capnp.h"
 #include <kj/debug.h>
@@ -13,6 +9,11 @@
 #include <capnp/rpc-twoparty.h>
 
 #include "../simserver.h"
+
+#include <boost/asio.hpp>
+#include <boost/process.hpp>
+#include <boost/process/handles.hpp>
+#include <boost/process/extend.hpp>
 
 class SimulatorImpl final : public Sim::Simulator<SimCommands>::Server
 {
@@ -25,7 +26,7 @@ public:
         for (Sim::File::Reader f : files)
         {
             kj::Path path = kj::Path::parse(f.getName());
-            kj::Own<const kj::File> file = dir.openFile(path, kj::WriteMode::CREATE | kj::WriteMode::MODIFY);
+            kj::Own<const kj::File> file = dir.openFile(path, kj::WriteMode::CREATE | kj::WriteMode::MODIFY | kj::WriteMode::CREATE_PARENT);
             file->truncate(0);
             file->write(0, f.getContents());
         }
@@ -41,65 +42,65 @@ public:
     const kj::Directory &dir;
 };
 
+using boost::this_process::native_handle_type;
+
+int runchild(kj::LowLevelAsyncIoProvider::Fd fd) {
+    kj::AsyncIoContext ctx = kj::setupAsyncIo();
+    auto stream = ctx.lowLevelProvider->wrapSocketFd(fd);
+    auto network = capnp::TwoPartyVatNetwork(*stream, capnp::rpc::twoparty::Side::SERVER);
+    kj::Own<kj::Filesystem> fs = kj::newDiskFilesystem();
+    const kj::Directory &dir = fs->getCurrent();
+    auto rpc = capnp::makeRpcServer(network, kj::heap<SimulatorImpl>(dir));
+    network.onDisconnect().wait(ctx.waitScope);
+    std::cout << "Client disconnected" << std::endl;
+    return 0;
+}
+
+using namespace boost::asio;
+using ip::tcp;
+using namespace boost::process;
+namespace ex = boost::process::extend;
+
+struct do_inherit : boost::process::extend::handler
+{
+    template<typename Char, typename Sequence>
+    void on_setup(ex::windows_executor<Char, Sequence> & exec)
+    {
+        std::cout << "windows setup" << std::endl;
+        exec.inherit_handles = 1;
+    }
+
+    template<typename Sequence>
+    void on_setup(ex::posix_executor<Sequence> & exec)
+    {
+        std::cout << "unix setup" << std::endl;
+    }
+};
+
 int main(int argc, char const *argv[])
 {
-
-    int serverFd, clientFd;
-    struct sockaddr_in server, client;
-    socklen_t len;
     int port = 5923;
-    char buffer[1024];
-    if (argc == 2)
+    if (argc == 2 && strcmp(argv[1], "--help")==0) {
+        std::cout << argv[0] << " [port]" << std::endl;
+        return 0;
+    } else if (argc == 3 && strcmp(argv[1], "--child")==0) {
+        kj::LowLevelAsyncIoProvider::Fd fd = std::stoi(argv[2]);
+        return runchild(fd);
+    } else if (argc == 2)
     {
-        port = atoi(argv[1]);
+        port = std::stoi(argv[1]);
     }
-    serverFd = socket(AF_INET, SOCK_STREAM, 0);
-    if (serverFd < 0)
-    {
-        perror("Cannot create socket");
-        exit(1);
-    }
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = INADDR_ANY;
-    server.sin_port = htons(port);
-    len = sizeof(server);
-    if (bind(serverFd, (struct sockaddr *)&server, len) < 0)
-    {
-        perror("Cannot bind sokcet");
-        exit(2);
-    }
-    if (listen(serverFd, 10) < 0)
-    {
-        perror("Listen error");
-        exit(3);
-    }
+    boost::asio::io_service io_service;
+    tcp::acceptor acceptor(io_service, tcp::endpoint(tcp::v6(), port));
     while (1)
     {
-        len = sizeof(client);
-        printf("waiting for clients\n");
-        if ((clientFd = accept(serverFd, (struct sockaddr *)&client, &len)) < 0)
-        {
-            perror("accept error");
-            exit(4);
-        }
-        pid_t pid = fork();
-        if (pid < 0) {
-            perror("fork error");
-            exit(4);
-        } else if (pid == 0) {
-            char *client_ip = inet_ntoa(client.sin_addr);
-            printf("Accepted new connection from a client %s:%d\n", client_ip, ntohs(client.sin_port));
-            kj::AsyncIoContext ctx = kj::setupAsyncIo();
-            auto stream = ctx.lowLevelProvider->wrapSocketFd(clientFd);
-            auto network = capnp::TwoPartyVatNetwork(*stream, capnp::rpc::twoparty::Side::SERVER);
-            kj::Own<kj::Filesystem> fs = kj::newDiskFilesystem();
-            const kj::Directory &dir = fs->getCurrent();
-            auto rpc = capnp::makeRpcServer(network, kj::heap<SimulatorImpl>(dir));
-            network.onDisconnect().wait(ctx.waitScope);
-            printf("Client disconnected: %s:%d\n", client_ip, ntohs(client.sin_port));
-            return 0;
-        }
+        std::cout << "waiting for clients" << std::endl;
+        tcp::socket peersocket(io_service);
+        acceptor.accept(peersocket);
+        auto endpoint = peersocket.remote_endpoint();
+        std::cout << "Accepted new connection from a client" << endpoint.address() << ":" << endpoint.port() << std::endl;
+        std::string fd = std::to_string(peersocket.release());
+        boost::process::spawn(argv[0], "--child", fd, do_inherit());
     }
-    close(serverFd);
     return 0;
 }
