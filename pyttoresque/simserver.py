@@ -10,7 +10,7 @@ import numpy as np
 def connect(host, port=5923, simulator=Ngspice):
     """
     Connect to a simulation server at the given `host:port`,
-    which is should be a `simulator` such as `Ngspice` or `Xyce`.
+    which should be a `simulator` such as `Ngspice` or `Xyce`.
     """
     return capnp.TwoPartyClient(f"{host}:{port}").bootstrap().cast_as(simulator)
 
