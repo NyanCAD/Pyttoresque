@@ -23,6 +23,8 @@ def loadFiles(sim, *names):
 
     For in-memory data, directly call `sim.loadFiles`.
     The data should be of the form `[{"name": name, "content": content"}]`
+
+    For files already present on the simulator use `sim.loadPath`.
     """
     data = []
     for name in names:

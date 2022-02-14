@@ -15,6 +15,7 @@ h1 {
 
 .bk-root {
     font: 400 16px/18px 'Roboto', sans-serif;
+    color: #222222A5;
 }
 .bk-root .horizontal .bk-input-group {
     flex-direction: row;
@@ -29,8 +30,6 @@ h1 {
     text-align: left;
     font: 500 16px/18px 'Roboto', sans-serif;
     letter-spacing: 0.72px;
-    color: #222222;
-    opacity: 0.65;
 }
 
 .bk-root .bk-input-group input,
@@ -43,7 +42,7 @@ h1 {
     text-align: left;
     font: 400 16px/18px 'Roboto', sans-serif;
     letter-spacing: 0.72px;
-    color: #22222259;
+    color: #2222226b;
 }
 
 .bk-root .bk-headers-wrapper {
@@ -58,8 +57,6 @@ h1 {
     text-align: left;
     font: 500 16px/18px 'Roboto', sans-serif;
     letter-spacing: 0.72px;
-    color: #222222;
-    opacity: 0.6;
     padding: 10px;
 }
 .bk-root .bk-tabs-header.bk-left .bk-tab.bk-active {
@@ -75,6 +72,7 @@ h1 {
 
 .bk-root .bk-btn {
     background: #0E1A32 0% 0% no-repeat padding-box;
+    border: none;
     border-radius: 5px;
     font: 500 16px/18px 'Roboto', sans-serif;
     letter-spacing: 0.9px;
