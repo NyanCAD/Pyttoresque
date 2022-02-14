@@ -24,7 +24,8 @@ setuptools.setup(
         'numpy',
         'jupyterlab',
         'jupyter_bokeh',
-        'jupyter-server-proxy'
+        'jupyter-server-proxy',
+        'more-itertools',
     ],
     package_data={
         'pyttoresque': [

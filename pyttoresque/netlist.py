@@ -136,7 +136,8 @@ class SchematicService(CloudantV1):
 
     def live_schem_docs(self, name, callback, db=dbdefault):
         seq, schem = self.get_all_schem_docs(name, db)
-        callback(schem)
+        if not callback(schem):
+            return
 
         sel = doc_selector(schem)
         result = self.post_changes_as_stream(
@@ -156,7 +157,8 @@ class SchematicService(CloudantV1):
                     del schem[_id.schem][doc["_id"]]
                 else:
                     schem[_id.schem][doc["_id"]] = doc
-                callback(schem)
+                if not callback(schem):
+                    break
 
 
 def rotate(shape, transform, devx, devy):

@@ -2,6 +2,9 @@ from subprocess import Popen
 from time import sleep
 import re
 import os
+from threading import Thread
+from more_itertools import roundrobin
+import capnp
 from bokeh.io import curdoc
 from bokeh.layouts import column, row, Spacer
 from bokeh.models import *
@@ -9,6 +12,7 @@ from bokeh.plotting import figure
 from bokeh.palettes import Colorblind
 from pyttoresque import simserver, netlist
 
+capnp.reset_event_loop(threaded=True)
 doc = curdoc()
 
 class Wizard:
@@ -66,6 +70,13 @@ simulator_port = NumericInput(title="Port", value=5923)
 sim_inputs = column(simulator_h, sim_doc, schemname, dbname, simulator_type, simulator_host, simulator_port, Spacer(sizing_mode="stretch_both"))
 sim_tab = Panel(child=sim_inputs, title="Configuration")
 
+# database connection
+service = netlist.SchematicService.from_url(dbname.value)
+def set_service(prop, old, new):
+    global service
+    service = netlist.SchematicService.from_url(new)
+dbname.on_change("value", set_service)
+
 ##### transient simulation #####
 
 tran_h = header("Transient")
@@ -73,7 +84,8 @@ tran_desc = Paragraph(text="Perform a non-linear, time-domain simulation")
 t_step = NumericInput(title="Maximum timestep", value=1e-6, mode="float")
 t_start = NumericInput(title="Data start time", value=0.0, mode="float")
 t_stop = NumericInput(title="Stop time", value=1e-3, mode="float")
-tran_inputs = column(tran_h, tran_desc, t_step, t_start, t_stop, Spacer(sizing_mode="stretch_both"))
+tran_opts = CheckboxGroup(labels=["Enable this simulation", "Rerun on changes"])
+tran_inputs = column(tran_h, tran_desc, t_step, t_start, t_stop, tran_opts, Spacer(sizing_mode="stretch_both"))
 tran_tab = Panel(child=tran_inputs, title="Transient")
 
 ##### AC simulation #####
@@ -84,7 +96,8 @@ sweep_type = Select(title="Point spacing", options=[("dec", "Decade"), ("oct", "
 f_points = NumericInput(title="Number of points", value=10, mode="float")
 f_start = NumericInput(title="Start frequency", value=1, mode="float")
 f_stop = NumericInput(title="Stop frequency", value=1e6, mode="float")
-ac_inputs = column(ac_h, ac_desc, sweep_type, f_points, f_start, f_stop, Spacer(sizing_mode="stretch_both"))
+ac_opts = CheckboxGroup(labels=["Enable this simulation", "Rerun on changes"])
+ac_inputs = column(ac_h, ac_desc, sweep_type, f_points, f_start, f_stop, ac_opts, Spacer(sizing_mode="stretch_both"))
 ac_tab = Panel(child=ac_inputs, title="AC Analysis")
 
 
@@ -96,7 +109,8 @@ dc_source = TextInput(title="Sweeped source name")
 dc_start = NumericInput(title="Start value", value=0, mode="float")
 dc_stop = NumericInput(title="Stop value", value=5, mode="float")
 dc_step = NumericInput(title="Increment", value=0.1, mode="float")
-dc_inputs = column(dc_h, dc_desc, dc_source, dc_start, dc_stop, dc_step, Spacer(sizing_mode="stretch_both"))
+dc_opts = CheckboxGroup(labels=["Enable this simulation", "Rerun on changes"])
+dc_inputs = column(dc_h, dc_desc, dc_source, dc_start, dc_stop, dc_step, dc_opts, Spacer(sizing_mode="stretch_both"))
 dc_tab = Panel(child=dc_inputs, title="DC Sweep")
 
 ##### Noise simulation #####
@@ -105,7 +119,12 @@ noise_h = header("Noise")
 noise_desc = Paragraph(text="Perform a stochastic noise analysis of the circuit linearised about the DC operating point, measuring input referred noise at the selected output node and input source")
 noise_output = TextInput(title="Name of output node")
 noise_input = TextInput(title="Name input source")
-noise_inputs = column(noise_h, noise_desc, noise_output, noise_input, sweep_type, f_points, f_start, f_stop, Spacer(sizing_mode="stretch_both"))
+n_sweep_type = Select(title="Point spacing", options=[("dec", "Decade"), ("oct", "Octave"), ("lin", "Linear"), ("list", "List")], value="dec")
+n_f_points = NumericInput(title="Number of points", value=10, mode="float")
+n_f_start = NumericInput(title="Start frequency", value=1, mode="float")
+n_f_stop = NumericInput(title="Stop frequency", value=1e6, mode="float")
+noise_opts = CheckboxGroup(labels=["Enable this simulation", "Rerun on changes"])
+noise_inputs = column(noise_h, noise_desc, noise_output, noise_input, n_sweep_type, n_f_points, n_f_start, n_f_stop, noise_opts, Spacer(sizing_mode="stretch_both"))
 noise_tab = Panel(child=noise_inputs, title="Noise")
 
 ##### DC transfer simulation #####
@@ -115,14 +134,16 @@ dct_h = header("DC Transfer")
 dct_desc = Paragraph(text="Find the DC small-signal transfer function")
 dct_output = TextInput(title="Name of output node")
 dct_input = TextInput(title="Name input source")
-dct_inputs = column(dct_h, dct_desc, dct_output, dct_input, Spacer(sizing_mode="stretch_both"))
+dct_opts = CheckboxGroup(labels=["Enable this simulation", "Rerun on changes"])
+dct_inputs = column(dct_h, dct_desc, dct_output, dct_input, dct_opts, Spacer(sizing_mode="stretch_both"))
 dct_tab = Panel(child=dct_inputs, title="DC Transfer")
 
 ##### operating point simulation #####
 
 op_h = header("DC Operating Point")
 op_desc = Paragraph(text="Find the DC operating point, treating capacitances as open circuits and inductors as shorts")
-op_inputs = column(op_h, op_desc, sizing_mode="stretch_both")
+op_opts = CheckboxGroup(labels=["Enable this simulation", "Rerun on changes"])
+op_inputs = column(op_h, op_desc, op_opts, sizing_mode="stretch_both")
 op_tab = Panel(child=op_inputs, title="DC Operating Point")
 
 tabs = Tabs(tabs=[tran_tab, ac_tab, dc_tab, noise_tab, op_tab, sim_tab], tabs_location='left', sizing_mode="stretch_both")
@@ -174,7 +195,7 @@ def update_traces():
         tracecolumn.children.clear()
         tracemap.clear()
 
-    for i, (k, (scale, data)) in enumerate(simdata.items()):
+    for k, (scale, data) in simdata.items():
         # check if any CheckboxGroups need to be added/updated
         if k in tracemap:
             if data.column_names != tracemap[k].labels:
@@ -192,25 +213,9 @@ def update_traces():
             tracecolumn.children.append(grp)
 
 
-def sim_once(sim, cb):
-    name = schemname.value
-    safename = re.sub(r"[^a-zA-Z0-9]", "_", name)
-    # tricky, we want to reuse this but it currently doesn't update
-    # so if it'd be global and a model was updated, it'd be wrong
-    # so now it'll only request each model once per simulation at least
-    service = netlist.SchematicService.from_url(dbname.value)
-    m = netlist.Modeldict(service=service)
-    seq, schem = service.get_all_schem_docs(name)
-    spice = netlist.spice_netlist(name, schem, m)
-    print(spice)
-    fileset = sim.loadFiles([{'name': safename+'.cir', 'contents': spice}])
-    res = cb(fileset)
-    for _ in simserver.stream(res, simdata):
-        update_traces()
-
 
 def plot_active(title, scale, cds, new):
-    print(title, scale, cds.data, new)
+    print(title, scale, cds, new)
     if scale.lower() in {"time", "v-sweep"}:
         fig = figure(title=title, output_backend="webgl", sizing_mode="stretch_both")
         browser.children[1] = fig
@@ -262,17 +267,81 @@ simcmds = [
     lambda fs: fs.commands.noise(noise_output.value, noise_input.value, sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors),
     lambda fs: fs.commands.op(vectors),
 ]
+opts = [tran_opts, ac_opts, dc_opts, noise_opts, op_opts]
 
 def disable_next(prop, old, new):
     root.nextbtn.disabled = new >= len(simcmds)
 tabs.on_change('active', disable_next)
 
+class SimRunner(Thread):
+    def __init__(self):
+        super().__init__()
+        self.first_run = True
+        self.running = False
+
+    def run(self):
+        self.running = True
+        service.live_schem_docs(schemname.value, self.do_simulations)
+        print("thread done")
+
+    def run_main(self, filename, enabled, spice):
+        # simdata.clear()
+        for scale, data in simdata.values():
+            data.data = {k: [] for k in data.column_names}
+
+        caps = []
+        first = True
+        for cmd in enabled:
+            sim = sim_connect()
+            if first:
+                # upload files once, if multiple connections, wait
+                cap = sim.loadFiles([{'name': filename, 'contents': spice}])
+                capw = cap if len(enabled) == 1 else cap.wait()
+                caps.append(simserver.stream(cmd(capw), simdata))
+            else:
+                cap = sim.loadPath(filename)
+                caps.append(simserver.stream(cmd(cap), simdata))
+        
+        for _ in roundrobin(*caps):
+            update_traces()
+
+    def do_simulations(self, schem):
+        enabled = []
+        has_live = False
+        for opt, cmd in zip(opts, simcmds):
+            if 0 in opt.active:
+                if 1 in opt.active:
+                    enabled.append(cmd)
+                    has_live = True
+                elif self.first_run:
+                    # on startup run all active simulations
+                    enabled.append(cmd)
+
+        if not enabled: return False
+        self.first_run = False # thread is running live simulations 
+
+        name = schemname.value
+        filename = re.sub(r"[^a-zA-Z0-9]", "_", name)+".cir"
+        # TODO make global once it updates itself
+        m = netlist.Modeldict(service=service)
+        spice = netlist.spice_netlist(name, schem, m)
+
+        doc.add_next_tick_callback(lambda: self.run_main(filename, enabled, spice))
+
+        # set running to False to end live updates
+        return self.running and has_live
+
+thread = None
+# TODO reuse thread, avoid capnp freaking out
 def run_simulation(e):
-    sim = sim_connect()
-    cb = simcmds[tabs.active]
-    sim_once(sim, cb)
-
-
+    global thread
+    # tell old thread to stop
+    if thread:
+        thread.running = False
+    # start new thread
+    thread = SimRunner()
+    thread.daemon = True
+    thread.start()
 root.nextbtn.on_click(run_simulation)
 
 # test = figure(title="foo", sizing_mode="stretch_both")

@@ -74,22 +74,22 @@ def stream(response, cdsdict, *, doc=None, cell=None):
     Takes an optional document to stream in `add_next_tick_callback` or
     a cell handle to invoke `push_notebook` on.
     """
-    def push(cds, data):
-        # this closure will capture the data so it doesn't change
-        doc.add_next_tick_callback(lambda: cds.stream(data))
+    # this closure will capture the data so it doesn't change
+    def push(k, v):
+        if k in cdsdict and list(v.data.keys()) == cdsdict[k].data.column_names:
+            cdsdict[k].data.stream(v.data)
+            if cell: # if we're running in a notebook, push update
+                push_notebook(handle=cell)
+        else:
+            cdsdict[k] = Result(v.scale, ColumnDataSource(v.data))
     more = True
     while more:
         more, res = read(response)
         for k, v in res.items():
-            if k in cdsdict and list(v.data.keys()) == cdsdict[k].data.column_names:
-                if doc: # if we're running in a thread, update on next tick
-                    push(cdsdict[k].data, v.data)
-                else:
-                    cdsdict[k].data.stream(v.data)
-                if cell: # if we're running in a notebook, push update
-                    push_notebook(handle=cell)
+            if doc: # if we're running in a thread, update on next tick
+                doc.add_next_tick_callback(lambda: push(k, v))
             else:
-                cdsdict[k] = Result(v.scale, ColumnDataSource(v.data))
+                push(k, v)
         yield
 
 
