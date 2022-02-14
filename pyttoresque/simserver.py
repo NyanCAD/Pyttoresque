@@ -40,64 +40,62 @@ def map_complex(vec):
 
 Result = namedtuple("Result", ("scale", "data"))
 
-
 def read(response):
     """
     Read one chunk from a simulation command
     """
-    while True:
-        res = response.result.read().wait()
-        if not res.scale:
+    data = {}
+    res = response.result.read().wait()
+    # print(res)
+    for vecs in res.data:
+        # this set of vectors is not initialised, skip it
+        if not vecs.scale:
             continue
-        data = {}
-        for vec in res.data:
-                arr = getattr(vec.data, vec.data.which())
-                if arr:
-                    if vec.data.which() == 'complex':
-                        # horrible hack because Bokeh doesn't like complex numbers
-                        comp = map_complex(arr)
-                        data[vec.name] = np.abs(comp)
-                        data[vec.name+"_phase"] = np.angle(comp)
-                    else:
-                        data[vec.name] = np.array(arr)
+        scale, vecsdata = data.setdefault(vecs.name, Result(vecs.scale, {}))
+        for vec in vecs.data:
+            # array *could* be empty
+            arr = getattr(vec.data, vec.data.which())
+            if vec.data.which() == 'complex':
+                # horrible hack because Bokeh doesn't like complex numbers
+                comp = map_complex(arr)
+                vecsdata[vec.name] = np.abs(comp)
+                vecsdata[vec.name+"_phase"] = np.angle(comp)
+            else:
+                vecsdata[vec.name] = np.array(arr)
 
-        if data:
-            return Result(res.scale, data)
-        if not res.more:
-            return
+    return res.more, data
 
 
-def stream(response, cds, *, doc=None, cell=None):
+def stream(response, cdsdict, *, doc=None, cell=None):
     """
     Stream simulation data into a ColumnDataSource
     Takes an optional document to stream in `add_next_tick_callback` or
     a cell handle to invoke `push_notebook` on.
     """
-    def push(data):
+    def push(cds, data):
         # this closure will capture the data so it doesn't change
         doc.add_next_tick_callback(lambda: cds.stream(data))
-    while True:
-        res = read(response)
-        if res:
-            if doc: # if we're running in a thread, update on next tick
-                push(res.data)
+    more = True
+    while more:
+        more, res = read(response)
+        for k, v in res.items():
+            if k in cdsdict and list(v.data.keys()) == cdsdict[k].data.column_names:
+                if doc: # if we're running in a thread, update on next tick
+                    push(cdsdict[k].data, v.data)
+                else:
+                    cdsdict[k].data.stream(v.data)
+                if cell: # if we're running in a notebook, push update
+                    push_notebook(handle=cell)
             else:
-                cds.stream(res.data)
-            if cell: # if we're running in a notebook, push update
-                push_notebook(handle=cell)
-        else:
-            break
+                cdsdict[k] = Result(v.scale, ColumnDataSource(v.data))
+        yield
 
 
 def readAll(response):
     """
     Read all the simulation data from a simulation command.
     """
-    res = read(response)
-    while True:
-        newres = read(response)
-        if newres:
-            res.data.stream(newres.data)
-        else:
-            break
-    return res
+    cdsdict = {}
+    for _ in stream(response, cdsdict):
+        pass
+    return cdsdict

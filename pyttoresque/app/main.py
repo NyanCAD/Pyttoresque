@@ -39,12 +39,10 @@ class Wizard:
 def header(txt):
     return Div(text=f"<h1>{txt}</h1>", css_classes=["heading"])
 
-# The main data source for all the simulation data
-cds = ColumnDataSource()
+# The main data sources for all the simulation data
+simdata = {}
 # the Popen object representing a local simulator
 simproc = None
-# the name of the x axis of the current simulation
-scale = "time"
 
 ##### simulator selection #####
 
@@ -67,50 +65,6 @@ simulator_port = NumericInput(title="Port", value=5923)
 
 sim_inputs = column(simulator_h, sim_doc, schemname, dbname, simulator_type, simulator_host, simulator_port, Spacer(sizing_mode="stretch_both"))
 sim_tab = Panel(child=sim_inputs, title="Configuration")
-
-def sim_connect():
-    global simproc
-    if simulator_type.value == "NgSpice":
-        sim = simserver.Ngspice
-        simcmd = "NgspiceSimServer"
-    elif simulator_type.value == "Xyce":
-        sim = simserver.Xyce
-        simcmd = "XyceSimServer"
-    else:
-        raise ValueError(simulator_type.value)
-    host = simulator_host.value
-    port = simulator_port.value
-    try:
-        return simserver.connect(host, port, sim)
-    except ConnectionRefusedError:
-        # if we're doing a local simulation, start a new server
-        if simulator_host.value=="localhost":
-            print("starting new local server")
-            simproc = Popen([simcmd, str(simulator_port.value)])
-            sleep(1) # wait a bit for the server to start :(
-            return simserver.connect(host, port, sim)
-        else:
-            raise
-
-def sim_once(sim, cb):
-    global scale
-    name = schemname.value
-    safename = re.sub(r"[^a-zA-Z0-9]", "_", name)
-    # tricky, we want to reuse this but it currently doesn't update
-    # so if it'd be global and a model was updated, it'd be wrong
-    # so now it'll only request each model once per simulation at least
-    service = netlist.SchematicService.from_url(dbname.value)
-    m = netlist.Modeldict(service=service)
-    seq, schem = service.get_all_schem_docs(name)
-    spice = netlist.spice_netlist(name, schem, m)
-    fileset = sim.loadFiles([{'name': safename+'.cir', 'contents': spice}])
-    res = cb(fileset)
-    scale, data = simserver.read(res)
-    cds.data = data
-    if cds.column_names != traces.labels:
-        traces.labels = cds.column_names
-        traces.active = []
-    simserver.stream(res, cds)
 
 ##### transient simulation #####
 
@@ -155,6 +109,7 @@ noise_inputs = column(noise_h, noise_desc, noise_output, noise_input, sweep_type
 noise_tab = Panel(child=noise_inputs, title="Noise")
 
 ##### DC transfer simulation #####
+# not implemented yet
 
 dct_h = header("DC Transfer")
 dct_desc = Paragraph(text="Find the DC small-signal transfer function")
@@ -170,43 +125,126 @@ op_desc = Paragraph(text="Find the DC operating point, treating capacitances as 
 op_inputs = column(op_h, op_desc, sizing_mode="stretch_both")
 op_tab = Panel(child=op_inputs, title="DC Operating Point")
 
-tabs = Tabs(tabs=[tran_tab, ac_tab, dc_tab, noise_tab, dct_tab, op_tab, sim_tab], tabs_location='left', sizing_mode="stretch_both")
+tabs = Tabs(tabs=[tran_tab, ac_tab, dc_tab, noise_tab, op_tab, sim_tab], tabs_location='left', sizing_mode="stretch_both")
 
 ##### result browser #####
 
-traces = CheckboxGroup()
-tracecolumn = column(traces, Spacer(sizing_mode="stretch_height"))
+tracecolumn = column(Spacer(sizing_mode="stretch_height"))
 # def set_traces(prop, old, new):
 #     traces.labels = list(new)
 # cds.on_change('column_names', set_traces)
 # cds.on_change('data', set_traces)
 
 fig = figure(title="Simulation Results", output_backend="webgl", sizing_mode="stretch_both")
-browser = row([tracecolumn, fig], sizing_mode="stretch_height")
+browser = row([column(tracecolumn, Spacer(sizing_mode="stretch_height")), fig], sizing_mode="stretch_height")
 
-def plot_active(prop, old, new):
-    if scale.lower() == "time":
-        fig = figure(title="Simulation Results", output_backend="webgl", sizing_mode="stretch_both")
+def sim_connect():
+    global simproc
+    if simulator_type.value == "NgSpice":
+        sim = simserver.Ngspice
+        simcmd = "NgspiceSimServer"
+    elif simulator_type.value == "Xyce":
+        sim = simserver.Xyce
+        simcmd = "XyceSimServer"
+    else:
+        raise ValueError(simulator_type.value)
+    host = simulator_host.value
+    port = simulator_port.value
+    try:
+        return simserver.connect(host, port, sim)
+    except ConnectionRefusedError:
+        # if we're doing a local simulation, start a new server
+        if simulator_host.value=="localhost":
+            print("starting new local server")
+            simproc = Popen([simcmd, str(simulator_port.value)])
+            sleep(1) # wait a bit for the server to start :(
+            return simserver.connect(host, port, sim)
+        else:
+            raise
+
+
+tracemap = {}
+def update_traces():
+    # to capture the loop variable
+    def closurehack(title, scale, data):
+        return lambda attr, old, new: plot_active(title, scale, data, new)
+
+    if tracemap.keys() != simdata.keys():
+        # The set of simulations changed, clear everything
+        tracecolumn.children.clear()
+        tracemap.clear()
+
+    for i, (k, (scale, data)) in enumerate(simdata.items()):
+        # check if any CheckboxGroups need to be added/updated
+        if k in tracemap:
+            if data.column_names != tracemap[k].labels:
+                # the key is already there, but the columns are different
+                # clear active columns and set new labels
+                tracemap[k].labels = data.column_names
+                tracemap[k].active.clear()
+        else:
+            # the key is not there yet, add a new CheckboxGroup
+            div = header(k)
+            grp = CheckboxGroup(labels=data.column_names)
+            grp.on_change('active', closurehack(k, scale, data))
+            tracemap[k] = grp
+            tracecolumn.children.append(div)
+            tracecolumn.children.append(grp)
+
+
+def sim_once(sim, cb):
+    name = schemname.value
+    safename = re.sub(r"[^a-zA-Z0-9]", "_", name)
+    # tricky, we want to reuse this but it currently doesn't update
+    # so if it'd be global and a model was updated, it'd be wrong
+    # so now it'll only request each model once per simulation at least
+    service = netlist.SchematicService.from_url(dbname.value)
+    m = netlist.Modeldict(service=service)
+    seq, schem = service.get_all_schem_docs(name)
+    spice = netlist.spice_netlist(name, schem, m)
+    print(spice)
+    fileset = sim.loadFiles([{'name': safename+'.cir', 'contents': spice}])
+    res = cb(fileset)
+    for _ in simserver.stream(res, simdata):
+        update_traces()
+
+
+def plot_active(title, scale, cds, new):
+    print(title, scale, cds.data, new)
+    if scale.lower() in {"time", "v-sweep"}:
+        fig = figure(title=title, output_backend="webgl", sizing_mode="stretch_both")
         browser.children[1] = fig
         for col in new:
             color = Colorblind[8][col%8]
             key = cds.column_names[col]
             fig.line(scale, key, source=cds, color=color)
     elif scale.lower() == "frequency":
-        figamp = figure(title="Amplitude", output_backend="webgl", y_axis_type="log", x_axis_type="log", height=100)
-        figphase = figure(title="Phase", output_backend="webgl", x_range=figamp.x_range, x_axis_type="log", height=100)
-        browser.children[1] = column(figamp, figphase, sizing_mode="stretch_both")
-        for col in new:
-            color = Colorblind[8][col%8]
-            key = cds.column_names[col]
-            if key.endswith("_phase"):
-                figphase.line(scale, key, source=cds, color=color)
-            else:
-                figamp.line(scale, key, source=cds, color=color)
+        if f"{scale}_phase" in cds.column_names:
+            # we have complex data
+            figamp = figure(title="Amplitude", output_backend="webgl", y_axis_type="log", x_axis_type="log", height=100)
+            figphase = figure(title="Phase", output_backend="webgl", x_range=figamp.x_range, x_axis_type="log", height=100)
+            browser.children[1] = column(figamp, figphase, sizing_mode="stretch_both")
+            for col in new:
+                color = Colorblind[8][col%8]
+                key = cds.column_names[col]
+                if key.endswith("_phase"):
+                    figphase.line(scale, key, source=cds, color=color)
+                else:
+                    figamp.line(scale, key, source=cds, color=color)
+        else:
+            # we have real data
+            fig = figure(title=title, output_backend="webgl", sizing_mode="stretch_both", y_axis_type="log", x_axis_type="log")
+            browser.children[1] = fig
+            for col in new:
+                color = Colorblind[8][col%8]
+                key = cds.column_names[col]
+                fig.line(scale, key, source=cds, color=color)
     else:
-        raise ValueError(scale)
+        # just show a table with the data
+        cols = [TableColumn(field=cds.column_names[i], title=cds.column_names[i]) for i in new]
+        browser.children[1] = DataTable(source=cds, columns=cols)
+        # raise ValueError(scale)
 
-traces.on_change('active', plot_active)
 
 root = Wizard(children=[tabs, browser])
 
@@ -219,7 +257,10 @@ sweep_types = {
 vectors = []
 simcmds = [
     lambda fs: fs.commands.tran(t_step.value, t_stop.value, t_start.value, vectors),
-    lambda fs: fs.commands.ac(sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors)
+    lambda fs: fs.commands.ac(sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors),
+    lambda fs: fs.commands.dc(dc_source.value, dc_start.value, dc_stop.value, dc_step.value, vectors),
+    lambda fs: fs.commands.noise(noise_output.value, noise_input.value, sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors),
+    lambda fs: fs.commands.op(vectors),
 ]
 
 def disable_next(prop, old, new):
@@ -230,6 +271,7 @@ def run_simulation(e):
     sim = sim_connect()
     cb = simcmds[tabs.active]
     sim_once(sim, cb)
+
 
 root.nextbtn.on_click(run_simulation)
 
