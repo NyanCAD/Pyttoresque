@@ -39,6 +39,15 @@ public:
         return kj::READY_NOW;
     }
 
+    kj::Promise<void> loadPath(LoadPathContext context) override
+    {
+        auto file = context.getParams().getFile();
+        auto res = context.getResults();
+        auto commands = kj::heap<SimCommandsImpl>(file);
+        res.setCommands(kj::mv(commands));
+        return kj::READY_NOW;
+    }
+
     const kj::Directory &dir;
 };
 

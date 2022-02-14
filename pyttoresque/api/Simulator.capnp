@@ -5,6 +5,7 @@ $Cxx.namespace("Sim");
 
 interface Simulator(Cmd) {
     loadFiles @0 (files :List(File)) -> (commands :Cmd);
+    loadPath @1 (file :Text) -> (commands :Cmd);
 }
 
 interface Run {
