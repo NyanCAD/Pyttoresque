@@ -22,7 +22,7 @@ def loadFiles(sim, *names):
     Returns a handle to run simulation commands on.
 
     For in-memory data, directly call `sim.loadFiles`.
-    The data should be of the form `[{"name": name, "content": content"}]`
+    The data should be of the form `[{"name": name, "contents": contents}]`
 
     For files already present on the simulator use `sim.loadPath`.
     """
