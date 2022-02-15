@@ -73,23 +73,32 @@ class SchematicService(CloudantV1):
     @classmethod
     def from_url(cls, url):
         up = ulp.urlparse(url)
+        dbname = cls.dbdefault
+        pathseg = up.path.split('/')
+        if pathseg:
+            dbname = pathseg.pop() or dbname
+
         if up.username or up.password:
-            if up.port:
-                netloc = f"{up.hostname}:{up.port}"
-            else:
-                netloc = up.hostname
-            url = ulp.urlunparse(up._replace(netloc=netloc))
             auth = BasicAuthenticator(up.username, up.password)
         else:
             auth = NoAuthAuthenticator()
 
+        if up.port:
+            netloc = f"{up.hostname}:{up.port}"
+        else:
+            netloc = up.hostname
+
+        url = ulp.urlunparse(up._replace(netloc=netloc, path='/'.join(pathseg)))
+        print(up.username, up.password, dbname, url)
+
         serv = cls(auth)
+        serv.dbdefault = dbname
         serv.set_service_url(url)
         return serv
 
-    def get_schem_docs(self, name, db=dbdefault):
+    def get_schem_docs(self, name, db=None):
         res = self.post_all_docs(
-            db=db,
+            db=db or self.dbdefault,
             include_docs=True,
             startkey=f"{name}:",
             endkey=f"{name}:\ufff0",
@@ -98,7 +107,7 @@ class SchematicService(CloudantV1):
         return res['update_seq'], {row['id']: row['doc'] for row in res['rows']}
 
 
-    def get_all_schem_docs(self, name, db=dbdefault):
+    def get_all_schem_docs(self, name, db=None):
         schem = {}
         seq, docs = self.get_schem_docs(name, db)
         schem[name] = docs
@@ -107,16 +116,16 @@ class SchematicService(CloudantV1):
             dev = devs.popleft()
             _id = SchemId(dev["cell"], dev.get('props', {}).get('model'), None, None)
             if _id.model and _id.schem not in schem:
-                seq, docs = self.get_schem_docs(_id.schem, db)
+                seq, docs = self.get_schem_docs(_id.schem, db or self.dbdefault)
                 if docs:
                     schem[_id.schem] = docs
                     devs.extend(docs.values())
         return seq, schem
 
-    def update_schem(self, seq, schem, db=dbdefault):
+    def update_schem(self, seq, schem, db=None):
         sel = doc_selector(schem)
         result = self.post_changes(
-            db=db,
+            db=db or self.dbdefault,
             filter="_selector",
             since=seq,
             include_docs=True,
@@ -134,14 +143,14 @@ class SchematicService(CloudantV1):
         return seq, schem
 
 
-    def live_schem_docs(self, name, callback, db=dbdefault):
+    def live_schem_docs(self, name, callback, db=None):
         seq, schem = self.get_all_schem_docs(name, db)
         if not callback(schem):
             return
 
         sel = doc_selector(schem)
         result = self.post_changes_as_stream(
-            db=db,
+            db=db or self.dbdefault,
             feed='continuous',
             heartbeat=5000,
             filter="_selector",
@@ -307,7 +316,7 @@ def circuit_spice(docs, models, declarations):
     return '\n'.join(cir)
 
 
-def spice_netlist(name, schem, models):
+def spice_netlist(name, schem, models, extra=""):
     declarations = set()
     for subname, docs in schem.items():
         if name == subname: continue
@@ -322,6 +331,7 @@ def spice_netlist(name, schem, models):
     ckt.append(f"* {name}")
     ckt.extend(declarations)
     ckt.append(body)
+    ckt.append(extra)
     ckt.append(".end\n")
 
     return "\n".join(ckt)

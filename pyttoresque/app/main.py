@@ -62,20 +62,22 @@ schemparam = getparam("schem")
 dbparam = getparam("db")
 dbdefault = "http://localhost:5984"
 schemname = TextInput(title="Schematic", value=schemparam, disabled=schemparam!="")
-dbname = TextInput(title="Database", value=dbparam or dbdefault, disabled=dbparam!="")
+dbhost = TextInput(title="Database URL", value=dbparam or dbdefault, disabled=dbparam!="")
 simulator_type = Select(title="Simulator", options=["NgSpice", "Xyce"], value="NgSpice")
 simulator_host = TextInput(title="Host", value="localhost")
 simulator_port = NumericInput(title="Port", value=5923)
+simulator_vectors = TextInput(title="Vectors to save")
+simulator_spice = TextAreaInput(title="Spice commands")
 
-sim_inputs = column(simulator_h, sim_doc, schemname, dbname, simulator_type, simulator_host, simulator_port, Spacer(sizing_mode="stretch_both"))
+sim_inputs = column(simulator_h, sim_doc, schemname, dbhost, simulator_type, simulator_host, simulator_port, simulator_vectors, simulator_spice, Spacer(sizing_mode="stretch_both"))
 sim_tab = Panel(child=sim_inputs, title="Configuration")
 
 # database connection
-service = netlist.SchematicService.from_url(dbname.value)
+service = netlist.SchematicService.from_url(dbhost.value)
 def set_service(prop, old, new):
     global service
     service = netlist.SchematicService.from_url(new)
-dbname.on_change("value", set_service)
+dbhost.on_change("value", set_service)
 
 ##### transient simulation #####
 
@@ -222,7 +224,7 @@ def plot_active(title, scale, cds, new):
         for col in new:
             color = Colorblind[8][col%8]
             key = cds.column_names[col]
-            fig.line(scale, key, source=cds, color=color)
+            fig.line(scale, key, source=cds, color=color, legend_label=key)
     elif scale.lower() == "frequency":
         if f"{scale}_phase" in cds.column_names:
             # we have complex data
@@ -233,9 +235,9 @@ def plot_active(title, scale, cds, new):
                 color = Colorblind[8][col%8]
                 key = cds.column_names[col]
                 if key.endswith("_phase"):
-                    figphase.line(scale, key, source=cds, color=color)
+                    figphase.line(scale, key, source=cds, color=color, legend_label=key)
                 else:
-                    figamp.line(scale, key, source=cds, color=color)
+                    figamp.line(scale, key, source=cds, color=color, legend_label=key)
         else:
             # we have real data
             fig = figure(title=title, output_backend="webgl", sizing_mode="stretch_both", y_axis_type="log", x_axis_type="log")
@@ -243,7 +245,7 @@ def plot_active(title, scale, cds, new):
             for col in new:
                 color = Colorblind[8][col%8]
                 key = cds.column_names[col]
-                fig.line(scale, key, source=cds, color=color)
+                fig.line(scale, key, source=cds, color=color, legend_label=key)
     else:
         # just show a table with the data
         cols = [TableColumn(field=cds.column_names[i], title=cds.column_names[i]) for i in new]
@@ -259,13 +261,14 @@ sweep_types = {
     "lin": simserver.AcType.lin,
 }
 
-vectors = []
+def vectors():
+    return simulator_vectors.value.split()
 simcmds = [
-    lambda fs: fs.commands.tran(t_step.value, t_stop.value, t_start.value, vectors),
-    lambda fs: fs.commands.ac(sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors),
-    lambda fs: fs.commands.dc(dc_source.value, dc_start.value, dc_stop.value, dc_step.value, vectors),
-    lambda fs: fs.commands.noise(noise_output.value, noise_input.value, sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors),
-    lambda fs: fs.commands.op(vectors),
+    lambda fs: fs.commands.tran(t_step.value, t_stop.value, t_start.value, vectors()),
+    lambda fs: fs.commands.ac(sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors()),
+    lambda fs: fs.commands.dc(dc_source.value, dc_start.value, dc_stop.value, dc_step.value, vectors()),
+    lambda fs: fs.commands.noise(noise_output.value, noise_input.value, sweep_types[sweep_type.value], f_points.value, f_start.value, f_stop.value, vectors()),
+    lambda fs: fs.commands.op(vectors()),
 ]
 opts = [tran_opts, ac_opts, dc_opts, noise_opts, op_opts]
 
@@ -324,7 +327,8 @@ class SimRunner(Thread):
         filename = re.sub(r"[^a-zA-Z0-9]", "_", name)+".cir"
         # TODO make global once it updates itself
         m = netlist.Modeldict(service=service)
-        spice = netlist.spice_netlist(name, schem, m)
+        spice = netlist.spice_netlist(name, schem, m, simulator_spice.value)
+        print(spice)
 
         doc.add_next_tick_callback(lambda: self.run_main(filename, enabled, spice))
 
