@@ -173,7 +173,7 @@ def sim_connect():
     port = simulator_port.value
     try:
         return simserver.connect(host, port, sim)
-    except ConnectionRefusedError:
+    except:# ConnectionRefusedError: inside docker weird stuff happens
         # if we're doing a local simulation, start a new server
         if simulator_host.value=="localhost":
             print("starting new local server")
