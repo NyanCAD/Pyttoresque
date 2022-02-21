@@ -4,7 +4,6 @@ import re
 import os
 from threading import Thread
 from more_itertools import roundrobin
-import capnp
 from bokeh.io import curdoc
 from bokeh.layouts import column, row, Spacer
 from bokeh.models import *
@@ -12,7 +11,6 @@ from bokeh.plotting import figure
 from bokeh.palettes import Colorblind
 from pyttoresque import simserver, netlist
 
-capnp.reset_event_loop(threaded=True)
 doc = curdoc()
 
 class Wizard:
