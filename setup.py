@@ -48,6 +48,10 @@ setuptools.setup(
     entry_points={
         'console_scripts': [
             'jupyter-mosaic = pyttoresque.app:main'
+        ],
+        'jupyter_serverproxy_servers': [
+            # name = packagename:function_name
+            'pouchdb = pyttoresque.app:setup_pouchdb',
         ]
     },
     python_requires='>=3.6',

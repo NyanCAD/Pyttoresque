@@ -59,5 +59,11 @@ class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
 def main():
     Mosaic.launch_instance()
 
+
+def setup_pouchdb():
+  return {
+    'command': ['pouchdb-server', '-p', '{port}']
+  }
+
 if __name__ == "__main__":
     main()
