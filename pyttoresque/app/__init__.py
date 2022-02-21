@@ -61,9 +61,11 @@ def main():
 
 
 def setup_pouchdb():
-  return {
-    'command': ['pouchdb-server', '-p', '{port}']
-  }
+    return {
+        # hardcode port for backend access
+        'command': ['pouchdb-server', '-p', '{port}'],
+        'port': 5984
+    }
 
 if __name__ == "__main__":
     main()
