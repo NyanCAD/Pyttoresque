@@ -19,6 +19,13 @@ mosfet_shape = list(shape_ports([
     " S",
 ]))
 
+bjt_shape = list(shape_ports([
+    " C",
+    "B ",
+    " E",
+]))
+
+
 twoport_shape = list(shape_ports([
     "P",
     "N",
@@ -198,6 +205,8 @@ def getports(doc, models):
         return {(x, y): doc['name']}
     elif cell in {'nmos', 'pmos'}:
         return rotate(mosfet_shape, tr, x, y)
+    elif cell in {'npn', 'pnp'}:
+        return rotate(bjt_shape, tr, x, y)
     elif cell in {'resistor', 'capacitor', 'inductor', 'vsource', 'isource', 'diode'}:
         return rotate(twoport_shape, tr, x, y)
     else:
@@ -231,6 +240,9 @@ def netlist(docs, models):
             doc = net.popleft()
             cell = doc['cell']
             if cell == 'wire':
+                wirename = doc.get('name')
+                if wirename:
+                    netname = wirename
                 for ploc in getports(doc, models).keys():
                     if ploc in wire_index:
                         net.extend(wire_index.pop(ploc))
@@ -298,6 +310,9 @@ def circuit_spice(docs, models, declarations):
         elif cell in {"pmos", "nmos"}:
             ports = ' '.join(p(c) for c in ['D', 'G', 'S', 'B'])
             templ = "M{name} {ports} {properties}"
+        elif cell in {"npn", "pnp"}:
+            ports = ' '.join(p(c) for c in ['C', 'B', 'E'])
+            templ = "Q{name} {ports} {properties}"
         else:  # subcircuit
             m = models[f"models:{cell}"]
             ports = ' '.join(p(c[2]) for c in m['conn'])
@@ -340,7 +355,8 @@ def spice_netlist(name, schem, models, extra=""):
 if __name__ == "__main__":
     service = SchematicService.new_instance()
     # name = "comparator$sky130_1v8_120mhz"
-    name = "top$top"
+    # name = "top$top"
+    name = "Oscillator$clopitsv2"
     models = Modeldict(service=service)
     seq, docs = service.get_all_schem_docs(name)
     # print(docs)
