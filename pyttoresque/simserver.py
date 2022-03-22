@@ -1,10 +1,11 @@
 from os import name
 import capnp
 from pyttoresque.api.Simulator_capnp import Ngspice, Xyce, Cxxrtl, AcType
-from bokeh.models import ColumnDataSource
-from bokeh.io import push_notebook
 from collections import namedtuple
+from streamz import Stream, buffer
+from streamz.dataframe import DataFrame
 import numpy as np
+import pandas as pd
 
 
 def connect(host, port=5923, simulator=Ngspice):
@@ -40,8 +41,6 @@ def map_complex(vec):
     return np.fromiter((complex(v.real, v.imag) for v in vec), complex)
 
 
-Result = namedtuple("Result", ("scale", "data"))
-
 def read(response):
     """
     Read one chunk from a simulation command
@@ -53,7 +52,7 @@ def read(response):
         # this set of vectors is not initialised, skip it
         if not vecs.scale:
             continue
-        scale, vecsdata = data.setdefault(vecs.name, Result(vecs.scale, {}))
+        vecsdata =  {}
         for vec in vecs.data:
             # array *could* be empty
             arr = getattr(vec.data, vec.data.which())
@@ -65,31 +64,29 @@ def read(response):
             else:
                 vecsdata[vec.name] = np.array(arr)
 
+        index = vecsdata.pop(vecs.scale)
+        data[vecs.name] = pd.DataFrame(vecsdata, index=index)
+
     return res.more, data
 
 
-def stream(response, cdsdict, *, doc=None, cell=None):
+def stream(response, streamzdict):
     """
-    Stream simulation data into a ColumnDataSource
+    Stream simulation data into a Streamz DataFrame
     Takes an optional document to stream in `add_next_tick_callback` or
     a cell handle to invoke `push_notebook` on.
     """
-    # this closure will capture the data so it doesn't change
-    def push(k, v):
-        if k in cdsdict and list(v.data.keys()) == cdsdict[k].data.column_names:
-            cdsdict[k].data.stream(v.data)
-            if cell: # if we're running in a notebook, push update
-                push_notebook(handle=cell)
-        else:
-            cdsdict[k] = Result(v.scale, ColumnDataSource(v.data))
     more = True
     while more:
         more, res = read(response)
         for k, v in res.items():
-            if doc: # if we're running in a thread, update on next tick
-                doc.add_next_tick_callback(lambda: push(k, v))
+            if k in streamzdict and (v.columns == streamzdict[k].columns).all():
+                streamzdict[k].emit(v)
             else:
-                push(k, v)
+                s = buffer(Stream(), 100000)
+                df = DataFrame(s, example=v)
+                df.emit(v)
+                streamzdict[k] = df
         yield
 
 
@@ -101,3 +98,11 @@ def readAll(response):
     for _ in stream(response, cdsdict):
         pass
     return cdsdict
+
+if __name__ == "__main__":
+    con = connect("localhost")
+    fs = loadFiles(con, "test.cir")
+    res = fs.commands.tran(1e-6, 1e-3, 0)
+    d = {}
+    for _ in stream(res, d):
+        print(d)
