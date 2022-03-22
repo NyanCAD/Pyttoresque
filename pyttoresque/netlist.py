@@ -14,21 +14,22 @@ def shape_ports(shape):
 
 
 mosfet_shape = list(shape_ports([
-    " D",
-    "GB",
-    " S",
+    " D ",
+    "GB ",
+    " S ",
 ]))
 
 bjt_shape = list(shape_ports([
-    " C",
-    "B ",
-    " E",
+    " C ",
+    "B  ",
+    " E ",
 ]))
 
 
 twoport_shape = list(shape_ports([
-    "P",
-    "N",
+    " P ",
+    "   ",
+    " N ",
 ]))
 
 
@@ -201,7 +202,7 @@ def getports(doc, models):
         ry = doc['ry']
         return {(x, y): None,
                 (x+rx, y+ry): None}
-    elif cell == 'label':
+    elif cell == 'port':
         return {(x, y): doc['name']}
     elif cell in {'nmos', 'pmos'}:
         return rotate(mosfet_shape, tr, x, y)
@@ -219,10 +220,12 @@ def port_index(docs, models):
     for doc in docs.values():
         cell = doc['cell']
         for (x, y), p in getports(doc, models).items():
-            if cell in {'wire', 'label'}:
+            if cell in {'wire', 'port'}:
                 wire_index.setdefault((x, y), []).append(doc)
             else:
-                device_index[x, y] = (p, doc)
+                device_index.setdefault((x, y), []).append((p, doc))
+                # add a dummy net so two devices can connect directly
+                wire_index.setdefault((x, y), [{"cell": "wire", "x": x, "y": y, "rx": 0, "ry": 0}])
     return device_index, wire_index
 
 
@@ -230,26 +233,29 @@ def netlist(docs, models):
     device_index, wire_index = port_index(docs, models)
     nl = {}
     netnum = 0
-    while wire_index:  # while there are devices left
-        loc, locdevs = wire_index.popitem()  # take one
+    while wire_index:  # while there are wires left
+        loc, locwires = wire_index.popitem()  # take one
         netname = f"net{netnum}"
         netnum+=1
-        net = deque(locdevs)
-        netdevs = {}
+        net = deque(locwires) # all the wires on this net
+        netdevs = {} # all the devices on this net
         while net:
-            doc = net.popleft()
+            doc = net.popleft() # take a wire from the net
             cell = doc['cell']
             if cell == 'wire':
                 wirename = doc.get('name')
                 if wirename:
                     netname = wirename
-                for ploc in getports(doc, models).keys():
+                for ploc in getports(doc, models).keys(): # get the wire ends
+                    # if the wire connects to another wire,
+                    # that we have not seen, add it to the net
                     if ploc in wire_index:
                         net.extend(wire_index.pop(ploc))
+                    # if the wire connect to a device, add its port to netdevs
                     if ploc in device_index:
-                        p, dev = device_index[ploc]
-                        netdevs.setdefault(dev['_id'], []).append(p)
-            elif cell == 'label':
+                        for p, dev in device_index[ploc]:
+                            netdevs.setdefault(dev['_id'], []).append(p)
+            elif cell == 'port':
                 netname = doc.get('name')
             else:
                 raise ValueError(cell)
@@ -356,9 +362,10 @@ if __name__ == "__main__":
     service = SchematicService.new_instance()
     # name = "comparator$sky130_1v8_120mhz"
     # name = "top$top"
-    name = "Oscillator$clopitsv2"
+    name = "Oscillator$colpittsv3"
     models = Modeldict(service=service)
     seq, docs = service.get_all_schem_docs(name)
     # print(docs)
+    # print(port_index(docs[name], models))
     # print(netlist(docs[name], models))
     print(spice_netlist(name, docs, models))
