@@ -51,7 +51,8 @@ setuptools.setup(
         ],
         'jupyter_serverproxy_servers': [
             # name = packagename:function_name
-            'pouchdb = pyttoresque.app:setup_pouchdb',
+            # 'pouchdb = pyttoresque.app:setup_pouchdb',
+            'bokeh = pyttoresque.app:setup_bokeh',
         ]
     },
     python_requires='>=3.6',
