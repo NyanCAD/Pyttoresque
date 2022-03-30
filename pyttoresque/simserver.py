@@ -1,19 +1,41 @@
 from os import name
+from time import sleep
+from subprocess import Popen
 import capnp
 from pyttoresque.api.Simulator_capnp import Ngspice, Xyce, Cxxrtl, AcType
-from collections import namedtuple
-from streamz import Stream, buffer
-from streamz.dataframe import DataFrame
 import numpy as np
 import pandas as pd
+from holoviews.streams import Buffer
 
 
 def connect(host, port=5923, simulator=Ngspice):
     """
     Connect to a simulation server at the given `host:port`,
     which should be a `simulator` such as `Ngspice` or `Xyce`.
+
+    If `host` is set to "localhost" and no server is running,
+    we will attempt to start one automatically.
     """
-    return capnp.TwoPartyClient(f"{host}:{port}").bootstrap().cast_as(simulator)
+    try:
+        return capnp.TwoPartyClient(f"{host}:{port}").bootstrap().cast_as(simulator)
+    except:# ConnectionRefusedError: inside docker weird stuff happens
+        # if we're doing a local simulation, start a new server
+        if host=="localhost":
+            print("starting new local server")
+            if simulator == Ngspice:
+                simcmd = "NgspiceSimServer"
+            elif simulator == Xyce:
+                simcmd = "XyceSimServer"
+            elif simulator == Cxxrtl:
+                simcmd = "CxxrtlSimServer"
+            else:
+                raise ValueError(simulator)
+
+            Popen([simcmd, str(port)])
+            sleep(1) # wait a bit for the server to start :(
+            return connect(host, port, simulator)
+        else:
+            raise
 
 
 def loadFiles(sim, *names):
@@ -70,23 +92,19 @@ def read(response):
     return res.more, data
 
 
-def stream(response, streamzdict):
+def stream(response, streamdict):
     """
-    Stream simulation data into a Streamz DataFrame
-    Takes an optional document to stream in `add_next_tick_callback` or
-    a cell handle to invoke `push_notebook` on.
+    Stream simulation data into a Buffer (DataFrame)
     """
     more = True
     while more:
         more, res = read(response)
         for k, v in res.items():
-            if k in streamzdict and (v.columns == streamzdict[k].columns).all():
-                streamzdict[k].emit(v)
+            if k in streamdict and list(v.columns) == list(streamdict[k].data.columns):
+                streamdict[k].send(v)
             else:
-                s = buffer(Stream(), 100000)
-                df = DataFrame(s, example=v)
-                df.emit(v)
-                streamzdict[k] = df
+                buf = Buffer(v, length=int(1e9), index=False)
+                streamdict[k] = buf
         yield
 
 

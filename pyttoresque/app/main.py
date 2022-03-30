@@ -1,4 +1,3 @@
-from subprocess import Popen
 from time import sleep
 import re
 import os
