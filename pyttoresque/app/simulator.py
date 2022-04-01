@@ -186,17 +186,15 @@ class Results(param.Parameterized):
 
     @param.depends('data')
     def view(self):
-        selcol = pn.Column(sizing_mode='stretch_height')
         col = pn.Column(sizing_mode='stretch_both')
         for k, v in self.data.items():
             colnames = list(v.data.columns)
             cols = analysis.active_traces(cols=colnames)
             sel = pn.widgets.CheckBoxGroup(options=colnames, value=colnames, sizing_mode='fixed')
             sel.link(cols, {"value": lambda t, e: t.event(cols=e.obj.value)})
-            selcol.append(pn.Card(sel, title=k))
             plt = self.plotcmd(v, cols)
-            col.append(pn.Row(plt))
-        return pn.Row(selcol, col, sizing_mode='stretch_both')
+            col.append(pn.Row(pn.Card(sel, title=k, sizing_mode='fixed'), pn.Column(plt)))
+        return col
 
     def panel(self):
         col = pn.Pane(self.view)
