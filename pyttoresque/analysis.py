@@ -16,4 +16,4 @@ def _timeplot(data, cols=[]):
 def timeplot(streams):
     curve_dmap = hv.DynamicMap(_timeplot, streams=streams)
     # return dynspread(datashade(curve_dmap, aggregator=ds.by('k', ds.any())))
-    return dynspread(datashade(curve_dmap, aggregator=ds.count_cat('k')))
+    return spread(datashade(curve_dmap, aggregator=ds.count_cat('k'), width=1000, height=1000))

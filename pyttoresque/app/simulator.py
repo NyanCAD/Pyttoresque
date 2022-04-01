@@ -45,6 +45,9 @@ class Configuration(param.Parameterized):
         sim = simserver.connect(self.host, self.port, self.simulator)
         return sim.loadFiles([{'name': filename, 'contents': self.spice}])
 
+    def panel(self):
+        return self.param
+
 
 class Simulation(param.Parameterized):
     vectors = param.List(precedence=0.5)
@@ -53,7 +56,7 @@ class Simulation(param.Parameterized):
     def cmd(self, fs):
         raise NotImplementedError()
 
-    def xlim(self, fs):
+    def xlim(self):
         raise NotImplementedError()
 
 class TranSimulation(Simulation):
@@ -102,12 +105,17 @@ class SimTabs(param.Parameterized):
         ])
 
     def cb(self, _, e):
+        print('tabs changed', e.obj.active)
         vals = list(self.param.sim.get_range().values())
         self.sim = vals[e.obj.active]
 
     def panel(self):
-        print(self.param.sim.get_range())
-        tabs = pn.Tabs(*self.param.sim.get_range().values())
+        print('tabs panel')
+        active = list(self.param.sim.get_range().keys()).index(self.sim.name)
+        tabs = pn.Tabs(
+            *self.param.sim.get_range().values(),
+            tabs_location='left',
+            active=active)
         tabs.link(self, callbacks={'active': self.cb})
         return tabs
 
@@ -116,7 +124,7 @@ class Results(param.Parameterized):
     xlim = param.Action()
     data = param.Dict({})
 
-    def simulate(self, _):
+    def simulate(self, _=None):
         for v in self.data.values():
             v.clear()
         res = self.cmd()
@@ -126,15 +134,19 @@ class Results(param.Parameterized):
             # print(self.data)
 
     @param.depends('data')
-    def panel(self):
-        btn = pn.widgets.Button(name="Simulate")
-        btn.on_click(self.simulate)
-        col = pn.Column(btn)
+    def view(self):
+        col = pn.Column()
         for k, v in self.data.items():
             cols = analysis.active_traces(cols=list(v.data.columns))
             if not v.data.empty:
                 plt = analysis.timeplot([v, cols]).opts(width=1000, height=500, xlim=self.xlim())
                 col.append(plt)
+        return col
+
+    def panel(self):
+        btn = pn.widgets.Button(name="Simulate")
+        btn.on_click(self.simulate)
+        col = pn.Column(btn, self.view)
         return col
 
 class Simulator(param.Parameterized):
@@ -148,14 +160,27 @@ class Simulator(param.Parameterized):
             tabs=SimTabs(),
             res=Results(),
         )
+        self.conf.param.watch(self._run, ['spice'], queued=True)
 
     @param.depends('tabs.sim', watch=True, on_init=True)
     def _cmd(self):
-        print(self.tabs.sim.cmd, self.conf.connect)
+        print("new cmd")
         self.res.cmd = lambda: self.tabs.sim.cmd(self.conf.connect())
         self.res.xlim = self.tabs.sim.xlim
+    
+    def _run(self, e):
+        print(current_thread())
+        if self.res.cmd:
+            print("running on change")
+            self.res.simulate()
 
     def panel(self):
-        return pn.Row(self.conf, self.tabs.panel(), self.res.panel)
+        return pn.pipeline.Pipeline([
+            ("Setup", self.conf),
+            ("Simulation", self.tabs),
+            ("Results", self.res)],
+            inherit_params=False,
+            debug=True)
+        # return pn.Row(self.conf, self.tabs.panel(), self.res.panel)
 
 Simulator().panel().servable()

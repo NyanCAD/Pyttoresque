@@ -103,6 +103,8 @@ class SchematicService(AbstractAsyncContextManager):
 
     async def get_all_schem_docs(self, name):
         schem = {}
+        seq, models = await self.get_docs("models")
+        schem["models"] = models
         seq, docs = await self.get_docs(name)
         schem[name] = docs
         devs = deque(docs.values())
@@ -319,10 +321,11 @@ def circuit_spice(docs, models, declarations):
     return '\n'.join(cir)
 
 
-def spice_netlist(name, schem, models, extra=""):
+def spice_netlist(name, schem, extra=""):
+    models = schem["models"]
     declarations = set()
     for subname, docs in schem.items():
-        if name == subname: continue
+        if subname in {name, "models"}: continue
         _id = SchemId.from_string(subname)
         mod = models[f"models:{_id.cell}"]
         ports = ' '.join(c[2] for c in mod['conn'])
@@ -343,12 +346,10 @@ def spice_netlist(name, schem, models, extra=""):
 async def main():
     async with SchematicService("http://localhost:5984/offline") as service:
         name = "top$top"
-        _, models = await service.get_docs("models")
         seq, docs = await service.get_all_schem_docs(name)
-        print(models)
         # print(port_index(docs[name], models))
         # print(netlist(docs[name], models))
-        print(spice_netlist(name, docs, models))
+        print(spice_netlist(name, docs))
 
 if __name__ == "__main__":
     import asyncio
