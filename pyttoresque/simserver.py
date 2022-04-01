@@ -106,19 +106,19 @@ async def read(response):
             arr = getattr(vec.data, vec.data.which())
             if vec.data.which() == 'complex':
                 # horrible hack because Bokeh doesn't like complex numbers
-                comp = map_complex(arr)
-                vecsdata[vec.name] = np.abs(comp)
-                vecsdata[vec.name+"_phase"] = np.angle(comp)
+                vecsdata[vec.name] = map_complex(arr)
+                # vecsdata[vec.name] = np.abs(comp)
+                # vecsdata[vec.name+"_phase"] = np.angle(comp)
             else:
                 vecsdata[vec.name] = np.array(arr)
 
-        index = vecsdata.pop(vecs.scale)
+        index = np.real(vecsdata.pop(vecs.scale))
         data[vecs.name] = pd.DataFrame(vecsdata, index=index)
 
     return res.more, data
 
 
-async def stream(response, streamdict):
+async def stream(response, streamdict, newkey=lambda k:None):
     """
     Stream simulation data into a Buffer (DataFrame)
     """
@@ -131,6 +131,7 @@ async def stream(response, streamdict):
             else:
                 buf = Buffer(v, length=int(1e9), index=False)
                 streamdict[k] = buf
+                newkey(k)
 
 
 async def readAll(response):
