@@ -1,9 +1,9 @@
-from ibmcloudant.cloudant_v1 import CloudantV1
-from ibm_cloud_sdk_core.api_exception import ApiException
-from ibm_cloud_sdk_core.authenticators import NoAuthAuthenticator, BasicAuthenticator
+import aiohttp
 from collections import deque, namedtuple
-import json
+from json import loads
 import urllib.parse as ulp
+from contextlib import AbstractAsyncContextManager
+from aiohttp.client_exceptions import ClientError
 
 
 def shape_ports(shape):
@@ -33,23 +33,6 @@ twoport_shape = list(shape_ports([
 ]))
 
 
-class Modeldict(dict):
-    def __init__(self, *args, service, db=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.service = service
-        if db == None:
-            self.db = service.dbdefault
-        else:
-            self.db = db
-
-    def __missing__(self, key):
-        try:
-            doc = self.service.get_document(self.db, key).get_result()
-        except ApiException:
-            raise KeyError(key)
-        self[key] = doc
-        return doc
-
 class SchemId(namedtuple("SchemId", ["cell", "model", "device", "key"])):
     @classmethod
     def from_string(cls, id):
@@ -75,71 +58,80 @@ def doc_selector(schem):
     return {"$or": ors}
 
 
-class SchematicService(CloudantV1):
-    dbdefault = "schematics"
+class StatusError(ClientError):
+    """Non-200 response"""
 
+class SchematicService(AbstractAsyncContextManager):
     @classmethod
-    def from_url(cls, url):
-        up = ulp.urlparse(url)
-        dbname = cls.dbdefault
-        pathseg = up.path.split('/')
-        if pathseg:
-            dbname = pathseg.pop() or dbname
+    def __init__(self, url):
+        self.url = url+"/"
+        self.session = aiohttp.ClientSession()
 
-        if up.username or up.password:
-            auth = BasicAuthenticator(up.username, up.password)
-        else:
-            auth = NoAuthAuthenticator()
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.session.close()
 
-        if up.port:
-            netloc = f"{up.hostname}:{up.port}"
-        else:
-            netloc = up.hostname
+    async def dbget(self, path, **kwargs):
+        url = ulp.urljoin(self.url, path)
+        async with self.session.get(url, params=kwargs) as res:
+            if res.status != 200:
+                raise StatusError(await res.json())
+            return await res.json()
 
-        url = ulp.urlunparse(up._replace(netloc=netloc, path='/'.join(pathseg)))
-        print(up.username, up.password, dbname, url)
+    async def dbpost(self, path, json, **kwargs):
+        url = ulp.urljoin(self.url, path)
+        async with self.session.post(url, json=json, params=kwargs) as res:
+            if res.status != 200:
+                raise StatusError(await res.json())
+            return await res.json()
 
-        serv = cls(auth)
-        serv.dbdefault = dbname
-        serv.set_service_url(url)
-        return serv
+    async def dbstream(self, path, json, **kwargs):
+        url = ulp.urljoin(self.url, path)
+        async with self.session.post(url, json=json, params=kwargs) as res:
+            if res.status != 200:
+                raise StatusError(await res.json())
+            while True:
+                line = await res.content.readline()
+                if not line: break
+                if not line.strip(): continue
+                yield loads(line)
 
-    def get_schem_docs(self, name, db=None):
-        res = self.post_all_docs(
-            db=db or self.dbdefault,
-            include_docs=True,
-            startkey=f"{name}:",
-            endkey=f"{name}:\ufff0",
-            update_seq=True
-        ).get_result()
+    async def get_docs(self, name):
+        res = await self.dbget("_all_docs",
+            include_docs="true",
+            startkey=f'"{name}:"',
+            endkey=f'"{name}:\ufff0"',
+            update_seq="true"
+        )
         return res['update_seq'], {row['id']: row['doc'] for row in res['rows']}
 
 
-    def get_all_schem_docs(self, name, db=None):
+    async def get_all_schem_docs(self, name):
         schem = {}
-        seq, docs = self.get_schem_docs(name, db)
+        seq, models = await self.get_docs("models")
+        schem["models"] = models
+        seq, docs = await self.get_docs(name)
         schem[name] = docs
         devs = deque(docs.values())
         while devs:
             dev = devs.popleft()
             _id = SchemId(dev["cell"], dev.get('props', {}).get('model'), None, None)
             if _id.model and _id.schem not in schem:
-                seq, docs = self.get_schem_docs(_id.schem, db or self.dbdefault)
+                seq, docs = await self.get_docs(_id.schem)
                 if docs:
                     schem[_id.schem] = docs
                     devs.extend(docs.values())
         return seq, schem
 
-    def update_schem(self, seq, schem, db=None):
+    async def update_schem(self, seq, schem):
         sel = doc_selector(schem)
-        result = self.post_changes(
-            db=db or self.dbdefault,
+        result = await self.dbget("_changes",
             filter="_selector",
             since=seq,
-            include_docs=True,
-            selector=sel).get_result()
+            include_docs="true",
+            json={"selector": sel})
 
         for change in result['results']:
+            print(change)
             doc = change['doc']
             _id = SchemId.from_string(doc["_id"])
             if doc.get('_deleted', False):
@@ -151,31 +143,27 @@ class SchematicService(CloudantV1):
         return seq, schem
 
 
-    def live_schem_docs(self, name, callback, db=None):
-        seq, schem = self.get_all_schem_docs(name, db)
-        if not callback(schem):
-            return
+    async def live_schem_docs(self, name):
+        seq, schem = await self.get_all_schem_docs(name)
+        yield schem
 
         sel = doc_selector(schem)
-        result = self.post_changes_as_stream(
-            db=db or self.dbdefault,
+        result = self.dbstream('_changes',
             feed='continuous',
-            heartbeat=5000,
+            heartbeat=10000,
             filter="_selector",
             since=seq,
-            include_docs=True,
-            selector=sel).get_result()
+            include_docs="true",
+            json={"selector": sel})
 
-        for chunk in result.iter_lines():
-            if chunk:
-                doc = json.loads(chunk)["doc"]
-                _id = SchemId.from_string(doc["_id"])
-                if doc.get('_deleted', False):
-                    del schem[_id.schem][doc["_id"]]
-                else:
-                    schem[_id.schem][doc["_id"]] = doc
-                if not callback(schem):
-                    break
+        async for chunk in result:
+            doc = chunk["doc"]
+            _id = SchemId.from_string(doc["_id"])
+            if doc.get('_deleted', False):
+                del schem[_id.schem][doc["_id"]]
+            else:
+                schem[_id.schem][doc["_id"]] = doc
+            yield schem
 
 
 def rotate(shape, transform, devx, devy):
@@ -337,10 +325,11 @@ def circuit_spice(docs, models, declarations):
     return '\n'.join(cir)
 
 
-def spice_netlist(name, schem, models, extra=""):
+def spice_netlist(name, schem, extra=""):
+    models = schem["models"]
     declarations = set()
     for subname, docs in schem.items():
-        if name == subname: continue
+        if subname in {name, "models"}: continue
         _id = SchemId.from_string(subname)
         mod = models[f"models:{_id.cell}"]
         ports = ' '.join(c[2] for c in mod['conn'])
@@ -358,14 +347,14 @@ def spice_netlist(name, schem, models, extra=""):
     return "\n".join(ckt)
 
 
+async def main():
+    async with SchematicService("http://localhost:5984/offline") as service:
+        name = "top$top"
+        seq, docs = await service.get_all_schem_docs(name)
+        # print(port_index(docs[name], models))
+        # print(netlist(docs[name], models))
+        print(spice_netlist(name, docs))
+
 if __name__ == "__main__":
-    service = SchematicService.new_instance()
-    # name = "comparator$sky130_1v8_120mhz"
-    # name = "top$top"
-    name = "Oscillator$colpittsv3"
-    models = Modeldict(service=service)
-    seq, docs = service.get_all_schem_docs(name)
-    # print(docs)
-    # print(port_index(docs[name], models))
-    # print(netlist(docs[name], models))
-    print(spice_netlist(name, docs, models))
+    import asyncio
+    asyncio.run(main())

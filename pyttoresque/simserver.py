@@ -1,18 +1,67 @@
 from os import name
+from time import sleep
+from subprocess import Popen
+import asyncio
 import capnp
 from pyttoresque.api.Simulator_capnp import Ngspice, Xyce, Cxxrtl, AcType
-from bokeh.models import ColumnDataSource
-from bokeh.io import push_notebook
-from collections import namedtuple
 import numpy as np
+import pandas as pd
+from holoviews.streams import Buffer
+
+async def capnpreader(client, reader):
+    try:
+        while True:
+            data = await reader.read(4096)
+            client.write(data)
+    except Exception as e:
+        print(e)
 
 
-def connect(host, port=5923, simulator=Ngspice):
+async def capnpwriter(client, writer):
+    try:
+        while True:
+            data = await client.read(4096)
+            writer.write(data.tobytes())
+            await writer.drain()
+    except Exception as e:
+        print(e)
+
+
+async def connect(host, port=5923, simulator=Ngspice, autostart=True):
     """
     Connect to a simulation server at the given `host:port`,
     which should be a `simulator` such as `Ngspice` or `Xyce`.
+
+    If `host` is set to "localhost" and no server is running,
+    we will attempt to start one automatically,
+    unless `autostart=False`.
     """
-    return capnp.TwoPartyClient(f"{host}:{port}").bootstrap().cast_as(simulator)
+    try:
+        reader, writer = await asyncio.open_connection(host, port)
+        client = capnp.TwoPartyClient()
+        asyncio.gather(
+            capnpreader(client, reader),
+            capnpwriter(client, writer),
+            return_exceptions=True)
+        return client.bootstrap().cast_as(simulator)
+    except:# ConnectionRefusedError: inside docker weird stuff happens
+        # if we're doing a local simulation, start a new server
+        if host=="localhost" and autostart:
+            print("starting new local server")
+            if simulator == Ngspice:
+                simcmd = "NgspiceSimServer"
+            elif simulator == Xyce:
+                simcmd = "XyceSimServer"
+            elif simulator == Cxxrtl:
+                simcmd = "CxxrtlSimServer"
+            else:
+                raise ValueError(simulator)
+
+            Popen([simcmd, str(port)])
+            sleep(1) # wait a bit for the server to start :(
+            return await connect(host, port, simulator, False)
+        else:
+            raise
 
 
 def loadFiles(sim, *names):
@@ -40,64 +89,65 @@ def map_complex(vec):
     return np.fromiter((complex(v.real, v.imag) for v in vec), complex)
 
 
-Result = namedtuple("Result", ("scale", "data"))
-
-def read(response):
+async def read(response):
     """
     Read one chunk from a simulation command
     """
     data = {}
-    res = response.result.read().wait()
+    res = await response.result.read().a_wait()
     # print(res)
     for vecs in res.data:
         # this set of vectors is not initialised, skip it
         if not vecs.scale:
             continue
-        scale, vecsdata = data.setdefault(vecs.name, Result(vecs.scale, {}))
+        vecsdata =  {}
         for vec in vecs.data:
             # array *could* be empty
             arr = getattr(vec.data, vec.data.which())
             if vec.data.which() == 'complex':
                 # horrible hack because Bokeh doesn't like complex numbers
-                comp = map_complex(arr)
-                vecsdata[vec.name] = np.abs(comp)
-                vecsdata[vec.name+"_phase"] = np.angle(comp)
+                vecsdata[vec.name] = map_complex(arr)
+                # vecsdata[vec.name] = np.abs(comp)
+                # vecsdata[vec.name+"_phase"] = np.angle(comp)
             else:
                 vecsdata[vec.name] = np.array(arr)
+
+        index = np.real(vecsdata.pop(vecs.scale))
+        data[vecs.name] = pd.DataFrame(vecsdata, index=index)
 
     return res.more, data
 
 
-def stream(response, cdsdict, *, doc=None, cell=None):
+async def stream(response, streamdict, newkey=lambda k:None):
     """
-    Stream simulation data into a ColumnDataSource
-    Takes an optional document to stream in `add_next_tick_callback` or
-    a cell handle to invoke `push_notebook` on.
+    Stream simulation data into a Buffer (DataFrame)
     """
-    # this closure will capture the data so it doesn't change
-    def push(k, v):
-        if k in cdsdict and list(v.data.keys()) == cdsdict[k].data.column_names:
-            cdsdict[k].data.stream(v.data)
-            if cell: # if we're running in a notebook, push update
-                push_notebook(handle=cell)
-        else:
-            cdsdict[k] = Result(v.scale, ColumnDataSource(v.data))
     more = True
     while more:
-        more, res = read(response)
+        more, res = await read(response)
         for k, v in res.items():
-            if doc: # if we're running in a thread, update on next tick
-                doc.add_next_tick_callback(lambda: push(k, v))
+            if k in streamdict and list(v.columns) == list(streamdict[k].data.columns):
+                streamdict[k].send(v)
             else:
-                push(k, v)
-        yield
+                buf = Buffer(v, length=int(1e9), index=False)
+                streamdict[k] = buf
+                newkey(k)
 
 
-def readAll(response):
+async def readAll(response):
     """
     Read all the simulation data from a simulation command.
     """
-    cdsdict = {}
-    for _ in stream(response, cdsdict):
-        pass
-    return cdsdict
+    streamdict = {}
+    await stream(response, streamdict)
+    return streamdict
+
+async def main():
+    con = await connect("localhost")
+    fs = loadFiles(con, "test.cir")
+    res = fs.commands.tran(1e-6, 1e-3, 0)
+    d = {}
+    print(await readAll(res))
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,16 +1,13 @@
 body, html {
     padding: 0;
     margin: 0;
+    overflow: hidden;
 }
 
 h1 {
-    text-align: left;
     font: 500 22px/28px 'Roboto', sans-serif;
     letter-spacing: 0.88px;
     color: #222222;
-    opacity: 1;
-    margin-bottom: 0;
-    margin-top: 20px;
 }
 
 .bk-root {
@@ -42,12 +39,11 @@ h1 {
     text-align: left;
     font: 400 16px/18px 'Roboto', sans-serif;
     letter-spacing: 0.72px;
-    color: #2222226b;
+    color: #222222;
 }
 
 .bk-root .bk-headers-wrapper {
     padding: 20px;
-    margin-right: 20px;
 }
 .bk-root .bk-tabs-header.bk-left .bk-headers {
     align-items: stretch;
@@ -71,27 +67,29 @@ h1 {
 }
 
 .bk-root .bk-btn {
-    background: #0E1A32 0% 0% no-repeat padding-box;
+    background: #2222220A 0% 0% no-repeat padding-box;
+    box-shadow: 0px 1px 5px #00000026;
     border: none;
     border-radius: 5px;
     font: 500 16px/18px 'Roboto', sans-serif;
     letter-spacing: 0.9px;
-    color: #FFFFFF;
     padding: 15px;
     text-transform: uppercase;
 }
 .bk-root .bk-btn:hover {
+    background: #2222221A 0% 0% no-repeat padding-box;
+}
+.bk-root .bk-btn.bk-btn-primary {
     background: #0E1A32 0% 0% no-repeat padding-box;
+    color: #FFFFFF;
+}
+.bk-root .bk-btn.bk-btn-primary:hover {
     color: #dddddd;
 }
 
 .bk-root .wizard-controls {
     outline: 1px solid #e6e6e6;
 }
-.bk-root .wizard-controls > .bk {
-    padding: 20px;
-}
-
 .bk-root .bk.spacer {
     display: none !important;
 }
