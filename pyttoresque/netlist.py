@@ -91,7 +91,6 @@ class SchematicService(AbstractAsyncContextManager):
                 raise StatusError(await res.json())
             while True:
                 line = await res.content.readline()
-                print("change", line)
                 if not line: break
                 if not line.strip(): continue
                 yield loads(line)
