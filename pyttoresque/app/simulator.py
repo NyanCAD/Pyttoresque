@@ -4,9 +4,10 @@ import holoviews as hv
 import numpy as np
 import param
 from tornado.ioloop import IOLoop
+from aiohttp.client_exceptions import ClientError
 from pyttoresque import simserver, netlist, analysis
 
-pn.extension('plotly', sizing_mode='stretch_both')
+pn.extension('plotly', sizing_mode='stretch_both', notifications=True)
 param.parameterized.async_executor = IOLoop.current().add_callback
 
 class Configuration(param.Parameterized):
@@ -19,23 +20,33 @@ class Configuration(param.Parameterized):
     port = param.Integer(default=5923)
     extra_spice = param.String()
 
+    error = param.ClassSelector(Exception, precedence=-1)
+
     def __init__(self, **params):
         super().__init__(**params)
         self.param.watch(self._update_spice, ['database_url', 'schematic'])
         pn.state.location.sync(self, {'database_url': 'db', 'schematic': 'schem'})
 
+
     async def _update_spice(self, *events):
-        url = self.database_url
-        name = self.schematic
-        print("update", name, url)
-        service = netlist.SchematicService(url)
-        it = service.live_schem_docs(name)
-        async for schem in it:
-            print("new schem")
-            if url != self.database_url or name != self.schematic:
-                print("change detected, ending watcher")
-                break
-            self.spice = netlist.spice_netlist(name, schem, self.extra_spice)
+        try:
+            url = self.database_url
+            name = self.schematic
+            print("update", name, url)
+            async with netlist.SchematicService(url) as service:
+                it = service.live_schem_docs(name)
+                async for schem in it:
+                    print("new schem")
+                    print(url, self.database_url, name, self.schematic)
+                    if url != self.database_url or name != self.schematic:
+                        print("change detected, ending watcher")
+                        break
+                    self.spice = netlist.spice_netlist(name, schem, self.extra_spice)
+                    print("no error")
+                    self.error = None
+        except Exception as e:
+            self.error = e
+            pn.state.notifications.error(str(e))
 
     @param.depends('schematic', 'host', 'port', 'simulator', 'spice')
     async def connect(self):
@@ -43,8 +54,17 @@ class Configuration(param.Parameterized):
         sim = await simserver.connect(self.host, self.port, self.simulator)
         return sim.loadFiles([{'name': filename, 'contents': self.spice}])
 
+    @param.depends('error')
+    def errormsg(self):
+        if self.error:
+            return pn.pane.Alert(str(self.error), alert_type='danger')
+
+
     def panel(self):
-        return pn.Column(pn.Param(self, sizing_mode="fixed"), pn.Spacer(sizing_mode='stretch_both'))
+        return pn.Column(
+            pn.Param(self, sizing_mode="fixed"),
+            self.errormsg,
+            pn.Spacer(sizing_mode='stretch_both'))
 
 
 class Simulation(param.Parameterized):
@@ -177,16 +197,28 @@ class Results(param.Parameterized):
     plotcmd = param.Callable()
     data = param.Dict({})
 
-    async def simulate(self, _=None):
-        for v in self.data.values():
-            v.clear()
-        res = await self.cmd()
-        newkey = lambda k: self.param.trigger('data')
-        await simserver.stream(res, self.data, newkey)
+    error = param.ClassSelector(Exception)
 
-    @param.depends('data')
+    async def simulate(self, _=None):
+        try:
+            for v in self.data.values():
+                v.clear()
+            res = await self.cmd()
+            newkey = lambda k: self.param.trigger('data')
+            await simserver.stream(res, self.data, newkey)
+        except Exception as e:
+            self.error = e
+        else:
+            self.error = None
+
+    @param.depends('data', 'error')
     def view(self):
         col = pn.Column(sizing_mode='stretch_both')
+        if self.error:
+            col.append(pn.pane.Alert(str(self.error), alert_type='danger'))
+            col.append(pn.Spacer(sizing_mode='stretch_both'))
+            return col
+
         for k, v in self.data.items():
             colnames = list(v.data.columns)
             cols = analysis.active_traces(cols=colnames)

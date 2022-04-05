@@ -3,6 +3,7 @@ from collections import deque, namedtuple
 from json import loads
 import urllib.parse as ulp
 from contextlib import AbstractAsyncContextManager
+from aiohttp.client_exceptions import ClientError
 
 
 def shape_ports(shape):
@@ -57,6 +58,9 @@ def doc_selector(schem):
     return {"$or": ors}
 
 
+class StatusError(ClientError):
+    """Non-200 response"""
+
 class SchematicService(AbstractAsyncContextManager):
     @classmethod
     def __init__(self, url):
@@ -70,21 +74,21 @@ class SchematicService(AbstractAsyncContextManager):
         url = ulp.urljoin(self.url, path)
         async with self.session.get(url, params=kwargs) as res:
             if res.status != 200:
-                raise Exception(await res.json())
+                raise StatusError(await res.json())
             return await res.json()
 
     async def dbpost(self, path, json, **kwargs):
         url = ulp.urljoin(self.url, path)
         async with self.session.post(url, json=json, params=kwargs) as res:
             if res.status != 200:
-                raise Exception(await res.json())
+                raise StatusError(await res.json())
             return await res.json()
 
     async def dbstream(self, path, json, **kwargs):
         url = ulp.urljoin(self.url, path)
         async with self.session.post(url, json=json, params=kwargs) as res:
             if res.status != 200:
-                raise Exception(await res.json())
+                raise StatusError(await res.json())
             while True:
                 line = await res.content.readline()
                 print("change", line)
@@ -147,7 +151,7 @@ class SchematicService(AbstractAsyncContextManager):
         sel = doc_selector(schem)
         result = self.dbstream('_changes',
             feed='continuous',
-            heartbeat=5000,
+            heartbeat=10000,
             filter="_selector",
             since=seq,
             include_docs="true",
