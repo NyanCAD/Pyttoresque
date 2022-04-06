@@ -18,14 +18,15 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
-        'ibmcloudant',
+        'aiohttp',
         'pycapnp',
-        'bokeh',
+        'panel',
+        'holoviews',
+        'datashader',
+        'plotly',
         'numpy',
         'jupyterlab',
-        'jupyter_bokeh',
         'jupyter-server-proxy',
-        'more-itertools',
     ],
     package_data={
         'pyttoresque': [
@@ -52,7 +53,7 @@ setuptools.setup(
         'jupyter_serverproxy_servers': [
             # name = packagename:function_name
             # 'pouchdb = pyttoresque.app:setup_pouchdb',
-            'bokeh = pyttoresque.app:setup_bokeh',
+            'panel = pyttoresque.app:setup_panel',
         ]
     },
     python_requires='>=3.6',

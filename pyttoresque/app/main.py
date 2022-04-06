@@ -1,4 +1,5 @@
 import re
+import traceback
 import panel as pn
 import holoviews as hv
 import numpy as np
@@ -7,7 +8,7 @@ from tornado.ioloop import IOLoop
 from pyttoresque import simserver, netlist, analysis
 
 
-pn.extension('plotly', sizing_mode='stretch_both', notifications=True)
+pn.extension('plotly', sizing_mode='stretch_both')
 param.parameterized.async_executor = IOLoop.current().add_callback
 
 class Configuration(param.Parameterized):
@@ -37,23 +38,17 @@ If the simulation host is set to "localhost", a local server will be started aut
         try:
             url = self.database_url
             name = self.schematic
-            print("update", name, url)
             async with netlist.SchematicService(url) as service:
                 it = service.live_schem_docs(name)
                 async for schem in it:
-                    print("new schem")
-                    print(url, self.database_url, name, self.schematic)
                     if url != self.database_url or name != self.schematic:
-                        print("change detected, ending watcher")
                         break
                     self.spice = netlist.spice_netlist(name, schem, self.extra_spice)
-                    print("no error")
                     self.error = None
         except Exception as e:
             self.error = e
-            pn.state.notifications.error(str(e))
+            traceback.print_exc()
 
-    @param.depends('schematic', 'host', 'port', 'simulator', 'spice')
     async def connect(self):
         filename = re.sub(r"[^a-zA-Z0-9]", "_", self.schematic)+".cir"
         sim = await simserver.connect(self.host, self.port, self.simulator)
@@ -130,7 +125,6 @@ class OpSimulation(Simulation):
 Find the DC operating point, treating capacitances as open circuits and inductors as shorts
 """
 
-    @param.depends('vectors')
     def cmd(self, fs):
         return fs.commands.op(self.vectors)
 
@@ -191,12 +185,10 @@ class SimTabs(param.Parameterized):
         ])
 
     def cb(self, _, e):
-        print('tabs changed', e.obj.active)
         vals = list(self.param.sim.get_range().values())
         self.sim = vals[e.obj.active]
 
     def panel(self):
-        print('tabs panel')
         active = list(self.param.sim.get_range().keys()).index(self.sim.name)
         tabs = pn.Tabs(
             *(pn.Column(
@@ -226,6 +218,7 @@ class Results(param.Parameterized):
             await simserver.stream(res, self.data, newkey)
         except Exception as e:
             self.error = e
+            traceback.print_exc()
         else:
             self.error = None
 
@@ -245,7 +238,13 @@ class Results(param.Parameterized):
             sel = pn.widgets.CheckBoxGroup(options=colnames, value=colnames, sizing_mode='fixed')
             sel.link(cols, {"value": lambda t, e: t.event(cols=e.obj.value)})
             plt = self.plotcmd(v, cols)
-            col.append(pn.Row(pn.Card(sel, title=k, sizing_mode='fixed'), pn.Column(plt)))
+            row = pn.Row(
+                pn.Card(sel, title=k, sizing_mode='fixed'),
+                pn.Column(plt, sizing_mode='stretch_both'),
+                sizing_mode='stretch_both'
+            )
+            col.append(row)
+        # col.append(pn.Spacer(sizing_mode='stretch_both'))
         return col
 
     def panel(self):
@@ -271,7 +270,6 @@ class Simulator(param.Parameterized):
         self._cmd(None)
 
     def _cmd(self, e):
-        print("new cmd")
         async def simcmd():
             con = await self.conf.connect()
             return self.tabs.sim.cmd(con)
@@ -283,7 +281,6 @@ class Simulator(param.Parameterized):
         if (self.res.cmd
         and self.stage == "res"
         and self.tabs.sim.rerun_on_change):
-            print("running on change")
             await self.res.simulate()
 
     @param.depends('stage')
@@ -316,8 +313,6 @@ class Simulator(param.Parameterized):
         return btn
 
     def panel(self):
-        print(type(self.view()))
-        print(type(self.tabs.panel()))
         return pn.Column(
             self.view,
             pn.Row(

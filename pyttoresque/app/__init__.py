@@ -62,11 +62,11 @@ def setup_pouchdb():
         'port': 5984
     }
 
-def setup_bokeh():
+def setup_panel():
     return {
-        'command': ['bokeh', 'serve',
+        'command': ['panel', 'serve',
                     '--allow-websocket-origin', '*',
-                    '--prefix', '{base_url}/bokeh',
+                    '--prefix', '{base_url}/panel',
                     '--port', '{port}', HERE],
         'absolute_url': True,
     }
