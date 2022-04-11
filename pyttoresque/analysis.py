@@ -10,15 +10,15 @@ active_traces = Stream.define('traces', cols=[])
 
 def _timeplot(data, cols=[]):
     traces = {k: hv.Curve((data.index, data[k]), 'time', 'amplitude') for k in cols}
-    if not cols:
-        traces = {"dummy": hv.Curve([])}
+    if not cols: # hack
+        traces = {"dummy": hv.Scatter([])}
     return hv.NdOverlay(traces, kdims='k')
 
 def timeplot(streams):
     curve_dmap = hv.DynamicMap(_timeplot, streams=streams)
     # return dynspread(datashade(curve_dmap, aggregator=ds.by('k', ds.any())))
-    # return spread(datashade(curve_dmap, aggregator=ds.by('k', ds.count()), width=1000, height=1000))
-    return spread(datashade(curve_dmap, aggregator=ds.count_cat('k'), width=1000, height=1000))
+    return spread(datashade(curve_dmap, aggregator=ds.by('k', ds.count()), width=1000, height=1000))
+    # return spread(datashade(curve_dmap, aggregator=ds.count_cat('k'), width=1000, height=1000))
 
 def _bodeplot(data, cols=[]):
     print(cols)

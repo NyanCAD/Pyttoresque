@@ -313,7 +313,7 @@ class Simulator(param.Parameterized):
             btn = pn.widgets.Button(name="Edit", margin=20)
             btn.on_click(lambda _: setattr(self, 'stage', 'tabs'))
         else:
-            btn = pn.widgets.Button(name="Setup", margin=20)
+            btn = pn.widgets.Button(name="Setup", margin=20, disabled=self.stage=="conf")
             btn.on_click(lambda _: setattr(self, 'stage', 'conf'))
         return btn
 
