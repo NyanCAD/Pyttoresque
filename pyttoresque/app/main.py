@@ -8,7 +8,7 @@ from tornado.ioloop import IOLoop
 from pyttoresque import simserver, netlist, analysis
 
 
-pn.extension('plotly', sizing_mode='stretch_both')
+pn.extension('plotly', 'terminal', sizing_mode='stretch_both')
 param.parameterized.async_executor = IOLoop.current().add_callback
 
 class Configuration(param.Parameterized):
@@ -50,8 +50,8 @@ If the simulation host is set to "localhost", a local server will be started aut
             traceback.print_exc()
 
     async def connect(self):
-        filename = re.sub(r"[^a-zA-Z0-9]", "_", self.schematic)+".cir"
         sim = await simserver.connect(self.host, self.port, self.simulator)
+        filename = re.sub(r"[^a-zA-Z0-9]", "_", self.schematic)+".cir"
         return sim.loadFiles([{'name': filename, 'contents': self.spice}])
 
     @param.depends('error')
@@ -209,13 +209,17 @@ class Results(param.Parameterized):
 
     error = param.ClassSelector(Exception)
 
+    def __init__(self):
+        super().__init__()
+        self.terminal = pn.widgets.Terminal(height=300, sizing_mode='stretch_width')
+
     async def simulate(self, _=None):
         try:
             for v in self.data.values():
                 v.clear()
             res = await self.cmd()
             newkey = lambda k: self.param.trigger('data')
-            await simserver.stream(res, self.data, newkey)
+            await simserver.stream(res, self.data, newkey, self.terminal)
         except Exception as e:
             self.error = e
             traceback.print_exc()
@@ -234,8 +238,8 @@ class Results(param.Parameterized):
 
         for k, v in self.data.items():
             colnames = list(v.data.columns)
-            cols = analysis.active_traces(cols=colnames)
-            sel = pn.widgets.CheckBoxGroup(options=colnames, value=colnames, sizing_mode='fixed')
+            cols = analysis.active_traces(cols=[])
+            sel = pn.widgets.CheckBoxGroup(options=colnames, value=[], sizing_mode='fixed')
             sel.link(cols, {"value": lambda t, e: t.event(cols=e.obj.value)})
             plt = self.plotcmd(v, cols)
             row = pn.Row(
@@ -245,6 +249,7 @@ class Results(param.Parameterized):
             )
             col.append(row)
         # col.append(pn.Spacer(sizing_mode='stretch_both'))
+        col.append(pn.Card(self.terminal, title="Simulator output", collapsed=True, sizing_mode='stretch_width'))
         return col
 
     def panel(self):

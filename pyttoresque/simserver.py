@@ -1,5 +1,6 @@
 from os import name
 from time import sleep
+from sys import stdout
 from subprocess import Popen
 import asyncio
 import capnp
@@ -89,12 +90,13 @@ def map_complex(vec):
     return np.fromiter((complex(v.real, v.imag) for v in vec), complex)
 
 
-async def read(response):
+async def read(response, io=stdout):
     """
     Read one chunk from a simulation command
     """
     data = {}
     res = await response.result.read().a_wait()
+    io.write(res.stdout)
     # print(res)
     for vecs in res.data:
         # this set of vectors is not initialised, skip it
@@ -118,13 +120,13 @@ async def read(response):
     return res.more, data
 
 
-async def stream(response, streamdict, newkey=lambda k:None):
+async def stream(response, streamdict, newkey=lambda k:None, io=stdout):
     """
     Stream simulation data into a Buffer (DataFrame)
     """
     more = True
     while more:
-        more, res = await read(response)
+        more, res = await read(response, io)
         for k, v in res.items():
             if k in streamdict and list(v.columns) == list(streamdict[k].data.columns):
                 streamdict[k].send(v)
@@ -134,19 +136,18 @@ async def stream(response, streamdict, newkey=lambda k:None):
                 newkey(k)
 
 
-async def readAll(response):
+async def readAll(response, io=stdout):
     """
     Read all the simulation data from a simulation command.
     """
     streamdict = {}
-    await stream(response, streamdict)
+    await stream(response, streamdict, io=io)
     return streamdict
 
 async def main():
-    con = await connect("localhost")
+    con = await connect("localhost", simulator=Xyce)
     fs = loadFiles(con, "test.cir")
-    res = fs.commands.tran(1e-6, 1e-3, 0)
-    d = {}
+    res = fs.commands.run(["V(*)", "I(*)"])
     print(await readAll(res))
 
 if __name__ == "__main__":
