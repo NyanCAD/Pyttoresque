@@ -1,6 +1,10 @@
 import holoviews as hv
 import datashader as ds
 import numpy as np
+import pandas as pd
+import scipy.fft
+import scipy.interpolate
+import functools
 from holoviews.streams import Buffer, Stream, param
 from holoviews.operation.datashader import datashade, shade, dynspread, spread, rasterize
 
@@ -9,7 +13,7 @@ hv.extension('plotly')
 active_traces = Stream.define('traces', cols=[])
 
 def _timeplot(data, cols=[]):
-    traces = {k: hv.Curve((data.index, data[k]), 'time', 'amplitude') for k in cols}
+    traces = {k: hv.Curve(data, 'index', k).redim(**{k:'amplitude', 'index':'time'}) for k in cols}
     if not cols: # hack
         traces = {"dummy": hv.Scatter([])}
     return hv.NdOverlay(traces, kdims='k')
@@ -21,7 +25,6 @@ def timeplot(streams):
     # return spread(datashade(curve_dmap, aggregator=ds.count_cat('k'), width=1000, height=1000))
 
 def _bodeplot(data, cols=[]):
-    print(cols)
     mag_traces = []
     pha_traces = []
     for k in cols:
@@ -42,7 +45,7 @@ def bodeplot(streams):
     return hv.DynamicMap(_bodeplot, streams=streams)
 
 def _sweepplot(data, cols=[]):
-    traces = {k: hv.Curve((data.index, data[k]), 'sweep', 'amplitude') for k in cols}
+    traces = {k: hv.Curve(data, 'index', k).redim(**{k:'amplitude', 'index':'sweep'}) for k in cols}
     if not cols:
         traces = {"dummy": hv.Curve([])}
     return hv.NdOverlay(traces, kdims='k')
@@ -55,3 +58,40 @@ def table(streams):
         lambda data, cols: hv.Table(data[cols]),
         streams=streams
     )
+
+def _fftplot(data, cols=[], n=1024):
+    traces = []
+    for k in cols:
+        fftdat = fft(data[k], n).iloc[:n//2]
+        mt = hv.Curve((fftdat.index, fftdat.abs()), 'freqency', 'amplitude')
+        traces.append(mt)
+
+    if not cols:
+        traces = [hv.Curve([])]
+
+    return hv.Overlay(traces).opts(logx=True, logy=True)
+
+def fftplot(streams, n=1024):
+    return hv.DynamicMap(functools.partial(_fftplot, n=n), streams=streams)
+
+## processing
+
+def span(ts):
+    return ts.index[-1] - ts.index[0]
+
+def interpolate(ts):
+    x = ts.index.to_numpy()
+    y = ts.to_numpy()
+    return scipy.interpolate.interp1d(x, y)
+
+def sample(ts, n):
+    Y = interpolate(ts)
+    return Y(np.linspace(ts.index[0], ts.index[-1], n))
+
+def fft(ts, n):
+    ft = sample(ts, n)
+    dt = span(ts)/n
+    fftdat = scipy.fft.fft(ft)
+    fftfreq = scipy.fft.fftfreq(ft.size, dt);
+    print(ft.size, dt, fftfreq, fftdat)
+    return pd.Series(fftdat, fftfreq, name=ts.name)

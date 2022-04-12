@@ -175,13 +175,28 @@ Perform a stochastic noise analysis of the circuit linearised about the DC opera
             )
 
 
+class FftSimulation(TranSimulation):
+    doc = """# FFT simulation
+Perform a non-linear, time-domain simulation and plot the FFT"""
+
+    fft_samples = param.Integer(1024)
+    # TODO window function
+
+    def plotcmd(self, buffer, cols):
+        return analysis.fftplot([buffer, cols], self.fft_samples).opts(
+            responsive=True,
+        )
+
 class SimTabs(param.Parameterized):
+    # TODO user loadable simulations, move FFT to contrib module
+    # sim = param.ClassSelector(Simulation, OpSimulation())
     sim = param.Selector([
             OpSimulation(name="Operating point"),
             TranSimulation(name="Transient simulation"),
             AcSimulation(name="AC simulation"),
             DcSimulation(name="DC sweep"),
             NoiseSimulation(name="Noise simulation"),
+            FftSimulation(name="FFT simulation"),
         ])
 
     def cb(self, _, e):
