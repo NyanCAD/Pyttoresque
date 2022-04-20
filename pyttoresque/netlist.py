@@ -33,17 +33,12 @@ twoport_shape = list(shape_ports([
 ]))
 
 
-class SchemId(namedtuple("SchemId", ["cell", "model", "device", "key"])):
+class SchemId(namedtuple("SchemId", ["cell", "model", "device"])):
     @classmethod
     def from_string(cls, id):
         schem, dev, *_= id.split(':') + [None]
-        if dev:
-            device, key = dev.split('-')
-        else:
-            device = None
-            key = None
         cell, model = schem.split('$')
-        return cls(cell, model, device, key)
+        return cls(cell, model, dev)
 
     @property
     def schem(self):
@@ -114,8 +109,9 @@ class SchematicService(AbstractAsyncContextManager):
         devs = deque(docs.values())
         while devs:
             dev = devs.popleft()
-            _id = SchemId(dev["cell"], dev.get('props', {}).get('model'), None, None)
-            if _id.model and _id.schem not in schem:
+            _id = SchemId(dev["cell"], dev.get('props', {}).get('model'), None)
+            typ = models.get('models:'+_id.cell, {}).get('models', {}).get(_id.model, {}).get('type')
+            if _id.model and _id.schem not in schem and typ == "schematic":
                 seq, docs = await self.get_docs(_id.schem)
                 if docs:
                     schem[_id.schem] = docs
@@ -213,7 +209,7 @@ def port_index(docs, models):
             else:
                 device_index.setdefault((x, y), []).append((p, doc))
                 # add a dummy net so two devices can connect directly
-                wire_index.setdefault((x, y), [{"cell": "wire", "x": x, "y": y, "rx": 0, "ry": 0}])
+                wire_index.setdefault((x, y), []).append({"cell": "wire", "x": x, "y": y, "rx": 0, "ry": 0})
     return device_index, wire_index
 
 
@@ -223,8 +219,7 @@ def netlist(docs, models):
     netnum = 0
     while wire_index:  # while there are wires left
         loc, locwires = wire_index.popitem()  # take one
-        netname = f"net{netnum}"
-        netnum+=1
+        netname = None
         net = deque(locwires) # all the wires on this net
         netdevs = {} # all the devices on this net
         while net:
@@ -232,7 +227,7 @@ def netlist(docs, models):
             cell = doc['cell']
             if cell == 'wire':
                 wirename = doc.get('name')
-                if wirename:
+                if netname == None and wirename != None:
                     netname = wirename
                 for ploc in getports(doc, models).keys(): # get the wire ends
                     # if the wire connects to another wire,
@@ -247,6 +242,9 @@ def netlist(docs, models):
                 netname = doc.get('name')
             else:
                 raise ValueError(cell)
+        if netname == None:
+            netname = f"net{netnum}"
+            netnum += 1
         for k, v in netdevs.items():
             nl.setdefault(netname, {}).setdefault(k, []).extend(v)
     inl = {}
@@ -269,10 +267,6 @@ def print_props(props):
     return " ".join(prs)
 
 
-def spicename(n):
-    return n.split('-',)[-1]
-
-
 def circuit_spice(docs, models, declarations):
     nl = netlist(docs, models)
     cir = []
@@ -280,8 +274,9 @@ def circuit_spice(docs, models, declarations):
         dev = docs[id]
         cell = dev['cell']
         mname = dev.get('props', {}).get('model', '')
-        name = dev.get('name') or spicename(id)
-        def p(p): return spicename(ports[p])
+        name = dev.get('name') or id
+        print(ports)
+        def p(p): return ports[p]
         propstr = print_props(dev.get('props', {}))
         if cell == "resistor":
             ports = ' '.join(p(c) for c in ['P', 'N'])
