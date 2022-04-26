@@ -213,6 +213,28 @@ def port_index(docs, models):
     return device_index, wire_index
 
 
+def wire_net(wireid, docs, models):
+    device_index, wire_index = port_index(docs, models)
+    netname = None
+    net = deque([docs[wireid]]) # all the wires on this net
+    while net:
+        doc = net.popleft() # take a wire from the net
+        cell = doc['cell']
+        if cell == 'wire':
+            wirename = doc.get('name')
+            if netname == None and wirename != None:
+                netname = wirename
+            for ploc in getports(doc, models).keys(): # get the wire ends
+                # if the wire connects to another wire,
+                # that we have not seen, add it to the net
+                if ploc in wire_index:
+                    net.extend(wire_index.pop(ploc))
+        elif cell == 'port':
+            netname = doc.get('name')
+        else:
+            raise ValueError(cell)
+    return netname
+
 def netlist(docs, models):
     device_index, wire_index = port_index(docs, models)
     nl = {}

@@ -20,6 +20,7 @@ If the simulation host is set to "localhost", a local server will be started aut
     schematic = param.String()
     database_url = param.String(label="Database URL")
     spice = param.String(precedence=-1)
+    netlist = param.Dict(precedence=-1)
     
     simulator = param.Selector(objects={"NgSpice": simserver.Ngspice, "Xyce": simserver.Xyce})
     host = param.String(default="localhost")
@@ -43,6 +44,7 @@ If the simulation host is set to "localhost", a local server will be started aut
                 async for schem in it:
                     if url != self.database_url or name != self.schematic:
                         break
+                    self.netlist = schem
                     self.spice = netlist.spice_netlist(name, schem, self.extra_spice)
                     self.error = None
         except Exception as e:
@@ -221,6 +223,7 @@ class Results(param.Parameterized):
     cmd = param.Action(label="Simulate")
     plotcmd = param.Callable()
     data = param.Dict({})
+    probe = param.String()
 
     error = param.ClassSelector(Exception)
 
@@ -256,6 +259,10 @@ class Results(param.Parameterized):
             cols = analysis.active_traces(cols=[])
             sel = pn.widgets.CheckBoxGroup(options=colnames, value=[], sizing_mode='fixed')
             sel.link(cols, {"value": lambda t, e: t.event(cols=e.obj.value)})
+            def update(e):
+                sel.value.append(self.probe)
+                sel.param.trigger('value')
+            self.param.watch(update, ['probe'])
             plt = self.plotcmd(v, cols)
             row = pn.Row(
                 pn.Card(sel, title=k, sizing_mode='fixed'),
@@ -271,6 +278,24 @@ class Results(param.Parameterized):
         col = pn.Pane(self.view)
         return col
 
+class BroadcastChannel(pn.reactive.ReactiveHTML):
+    value = param.String(default=None, allow_None=True)
+
+    _template = """<div>
+    <input id="hiddenmsg" type="hidden" value="${value}"></input>
+    <script>
+    var inp = document.currentScript.previousSibling;
+    var name = "${name}".trim()
+    var ch = new BroadcastChannel(name)
+    ch.addEventListener("message", function(msg) {
+        inp.value = msg.data;
+        inp.dispatchEvent(new Event('change'));
+    })
+    </script>
+    </div>"""
+
+    _dom_events = {'hiddenmsg': ['change']}
+
 class Simulator(param.Parameterized):
     conf = param.ClassSelector(Configuration)
     tabs = param.ClassSelector(SimTabs)
@@ -284,6 +309,8 @@ class Simulator(param.Parameterized):
             tabs=SimTabs(),
             res=Results(),
         )
+        self.brch = BroadcastChannel(name="probe", sizing_mode='fixed')
+        self.brch.param.watch(self._probe, ['value'], onlychanged=False)
         self.conf.param.watch(self._run, ['spice'])
         self.param.watch(self._run, ['stage'], onlychanged=False)
         self.tabs.param.watch(self._cmd, ['sim'])
@@ -302,6 +329,14 @@ class Simulator(param.Parameterized):
         and self.stage == "res"
         and self.tabs.sim.rerun_on_change):
             await self.res.simulate()
+
+    def _probe(self, e):
+        key = e.obj.value
+        id = netlist.SchemId.from_string(key)
+        models = self.conf.netlist.get("models", {})
+        schem = self.conf.netlist.get(id.schem, {})
+        net = netlist.wire_net(key, schem, models)
+        self.res.probe = net
 
     @param.depends('stage')
     def view(self):
@@ -338,6 +373,7 @@ class Simulator(param.Parameterized):
             pn.Row(
                 self.prevbtn,
                 pn.Spacer(),
+                self.brch,
                 self.nextbtn,
                 sizing_mode='stretch_width',
                 css_classes=['wizard-controls']
