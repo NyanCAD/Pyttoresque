@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2022 Pepijn de Vos
+#
+# SPDX-License-Identifier: MPL-2.0
+
 import aiohttp
 from collections import deque, namedtuple
 from json import loads

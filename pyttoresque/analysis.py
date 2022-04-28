@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2022 Pepijn de Vos
+#
+# SPDX-License-Identifier: MPL-2.0
+
 import holoviews as hv
 import datashader as ds
 import numpy as np

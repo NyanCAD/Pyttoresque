@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2022 Pepijn de Vos
+#
+# SPDX-License-Identifier: MPL-2.0
+
 import os
 from jupyter_server.base.handlers import JupyterHandler
 from jupyter_server.extension.handler import ExtensionHandlerJinjaMixin, ExtensionHandlerMixin

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2022 Pepijn de Vos
+#
+# SPDX-License-Identifier: MPL-2.0
+
 from os import name
 from time import sleep
 from sys import stdout

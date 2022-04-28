@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2022 Pepijn de Vos
+#
+# SPDX-License-Identifier: MPL-2.0
+
 from pyttoresque.app import Mosaic
 
 def _jupyter_server_extension_points():
