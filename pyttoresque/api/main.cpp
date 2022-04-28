@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2022 Pepijn de Vos
+//
+// SPDX-License-Identifier: MPL-2.0
+
 #include <string> 
 
 #include "api/Simulator.capnp.h"

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2022 Pepijn de Vos
+#
+# SPDX-License-Identifier: MPL-2.0
+
 @0x8c03f73b3ceae3de;
 
 using Cxx = import "/capnp/c++.capnp";
