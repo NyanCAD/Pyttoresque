@@ -8,6 +8,8 @@ from jupyter_server.extension.handler import ExtensionHandlerJinjaMixin, Extensi
 from jupyter_server.extension.application import ExtensionApp, ExtensionAppJinjaMixin
 from tornado.web import addslash
 from traitlets import Bool
+from subprocess import Popen
+from shutil import which
 
 HERE = os.path.dirname(__file__)
 
@@ -42,7 +44,7 @@ class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
     static_paths = [os.path.join(HERE, "static")]
     template_paths = [os.path.join(HERE, "templates")]
     
-    couchdb = Bool(help="Use localhost CouchDB instead of PouchDB").tag(config=True)
+    couchdb = Bool(help="Launch localhost CouchDB instead of using PouchDB").tag(config=True)
 
     def initialize_settings(self):
         self.settings["mosaic_couchdb"] = self.couchdb
@@ -54,15 +56,19 @@ class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
 
         super().initialize_handlers()
 
+        binpath = which('couchdb')
+        if binpath and self.couchdb:
+            Popen([binpath, '-couch_ini', os.path.join(HERE, "static", "local.ini")])
+
 
 def main():
     Mosaic.launch_instance()
 
 
-def setup_pouchdb():
+def setup_couchdb():
     return {
         # hardcode port for backend access
-        'command': ['pouchdb-server', '-p', '{port}'],
+        'command': ['couchdb', '-couch_ini', os.path.join(HERE, "static", "local.ini")],
         'port': 5984
     }
 
