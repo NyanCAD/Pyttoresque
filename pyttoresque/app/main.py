@@ -4,6 +4,7 @@
 
 import re
 import traceback
+import urllib.parse as ulp
 import panel as pn
 import holoviews as hv
 import numpy as np
@@ -42,6 +43,15 @@ If the simulation host is set to "localhost", a local server will be started aut
     async def _update_spice(self, *events):
         try:
             url = self.database_url
+            # if we have a localhost couchdb proxied through Jupyter
+            # actually use localhost because Jupyter is authenticated
+            purl = ulp.urlparse(url)
+            if purl.hostname == "localhost" and purl.path.startswith("/couchdb"):
+                netloc = f"{purl.username}:{purl.password}@localhost:5984"
+                path = purl.path[8:]
+                url = purl._replace(path=path, netloc=netloc).geturl()
+                self.database_url = url
+
             name = self.schematic
             async with netlist.SchematicService(url) as service:
                 it = service.live_schem_docs(name)

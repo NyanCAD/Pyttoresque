@@ -8,8 +8,6 @@ from jupyter_server.extension.handler import ExtensionHandlerJinjaMixin, Extensi
 from jupyter_server.extension.application import ExtensionApp, ExtensionAppJinjaMixin
 from tornado.web import addslash
 from traitlets import Bool
-from subprocess import Popen
-from shutil import which
 
 HERE = os.path.dirname(__file__)
 
@@ -55,10 +53,6 @@ class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
         self.handlers.append((r"/mosaic/editor/?", MosaicHandler))
 
         super().initialize_handlers()
-
-        binpath = which('couchdb')
-        if binpath and self.couchdb:
-            Popen([binpath, '-couch_ini', os.path.join(HERE, "static", "local.ini")])
 
 
 def main():

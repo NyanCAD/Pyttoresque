@@ -56,7 +56,7 @@ setuptools.setup(
         ],
         'jupyter_serverproxy_servers': [
             # name = packagename:function_name
-            # 'couchdb = pyttoresque.app:setup_couchdb',
+            'couchdb = pyttoresque.app:setup_couchdb',
             'panel = pyttoresque.app:setup_panel',
         ]
     },
