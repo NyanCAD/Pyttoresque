@@ -60,9 +60,12 @@ def main():
 
 
 def setup_couchdb():
+    cmd = ['couchdb', '-couch_ini', os.path.join(HERE, "static", "local.ini")]
+    if os.name == 'nt':
+        cmd = ["cmd.exe", "/c"] + cmd
     return {
         # hardcode port for backend access
-        'command': ['couchdb', '-couch_ini', os.path.join(HERE, "static", "local.ini")],
+        'command': cmd,
         'port': 5984
     }
 
