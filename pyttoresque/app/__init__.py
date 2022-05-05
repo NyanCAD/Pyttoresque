@@ -66,7 +66,8 @@ def setup_couchdb():
     return {
         # hardcode port for backend access
         'command': cmd,
-        'port': 5984
+        'port': 5984,
+        'request_headers_override': {"Authorization": "Basic YWRtaW46YWRtaW4="}
     }
 
 def setup_panel():

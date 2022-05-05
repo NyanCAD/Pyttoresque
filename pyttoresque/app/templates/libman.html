@@ -30,10 +30,7 @@ SPDX-License-Identifier: MPL-2.0
   <div id="mosaic_libman"></div>
   <script>
     {% if couchdb %}
-    var url = new URL("/couchdb/", window.location)
-    url.username = "admin"
-    url.password = "admin"
-    window.dburl = url.href
+    window.dburl = new URL("/couchdb/", window.location).href
     {% endif %}
   </script>
   <script src="{{ static_url('common.js') }}"></script>
