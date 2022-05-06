@@ -8,9 +8,11 @@ from jupyter_server.extension.handler import ExtensionHandlerJinjaMixin, Extensi
 from jupyter_server.extension.application import ExtensionApp, ExtensionAppJinjaMixin
 from tornado.web import addslash
 from traitlets import Bool
+from shutil import which
 
 HERE = os.path.dirname(__file__)
 
+has_couchdb = bool(which("couchdb"))
 
 class LibmanHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterHandler):
     @addslash
@@ -20,7 +22,7 @@ class LibmanHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterHa
                 "libman.html",
                 static=self.static_url,
                 token=self.settings["token"],
-                couchdb=self.settings["mosaic_couchdb"],
+                couchdb=has_couchdb,
             )
         )
 
@@ -32,7 +34,7 @@ class MosaicHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterHa
                 "editor.html",
                 static=self.static_url,
                 token=self.settings["token"],
-                couchdb=self.settings["mosaic_couchdb"],
+                couchdb=has_couchdb,
             )
         )
 
@@ -42,10 +44,7 @@ class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
     static_paths = [os.path.join(HERE, "static")]
     template_paths = [os.path.join(HERE, "templates")]
     
-    couchdb = Bool(help="Launch localhost CouchDB instead of using PouchDB").tag(config=True)
-
     def initialize_settings(self):
-        self.settings["mosaic_couchdb"] = self.couchdb
         super().initialize_settings()
 
     def initialize_handlers(self):
