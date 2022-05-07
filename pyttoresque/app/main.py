@@ -44,10 +44,10 @@ If the simulation host is set to "localhost", a local server will be started aut
         try:
             url = self.database_url
             # if we have a localhost couchdb proxied through Jupyter
-            # actually use localhost because Jupyter is authenticated
+            # actually use localhost because Jupyter is token authenticated
             purl = ulp.urlparse(url)
             if purl.hostname == "localhost" and purl.path.startswith("/couchdb"):
-                netloc = f"{purl.username}:{purl.password}@localhost:5984"
+                netloc = f"admin:admin@localhost:5984"
                 path = purl.path[8:]
                 url = purl._replace(path=path, netloc=netloc).geturl()
                 self.database_url = url
