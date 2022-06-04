@@ -29,10 +29,12 @@ def timeplot(streams):
     # return spread(datashade(curve_dmap, aggregator=ds.count_cat('k'), width=1000, height=1000))
 
 def _bodeplot(data, cols=[]):
+    data[data==0] = np.finfo(float).eps # prevent infinity
+    xlim = (0.1, 10) if data.index.empty else (data.index[0], data.index[-1])
     mag_traces = []
     pha_traces = []
     for k in cols:
-        mt = hv.Curve((data.index, np.abs(data[k])), 'freqency', 'amplitude')
+        mt = hv.Curve((data.index, 20*np.log10(np.abs(data[k]))), 'freqency', 'amplitude (dB)')
         pt = hv.Curve((data.index, np.angle(data[k], deg=True)), 'freqency', 'angle')
         mag_traces.append(mt)
         pha_traces.append(pt)
@@ -41,8 +43,8 @@ def _bodeplot(data, cols=[]):
         mag_traces = [hv.Curve([])]
         pha_traces = [hv.Curve([])]
 
-    mag = hv.Overlay(mag_traces).opts(logx=True, logy=True)
-    phase = hv.Overlay(pha_traces).opts(logx=True)
+    mag = hv.Overlay(mag_traces).opts(logx=True, logy=False, xlim=xlim)
+    phase = hv.Overlay(pha_traces).opts(logx=True, xlim=xlim)
     return hv.Layout([mag, phase]).cols(1)
 
 def bodeplot(streams):

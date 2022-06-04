@@ -301,7 +301,7 @@ def circuit_spice(docs, models, declarations):
         cell = dev['cell']
         mname = dev.get('props', {}).get('model', '')
         name = dev.get('name') or id
-        print(ports)
+        # print(ports)
         def p(p): return ports[p]
         propstr = print_props(dev.get('props', {}))
         if cell == "resistor":
@@ -338,7 +338,7 @@ def circuit_spice(docs, models, declarations):
         try:
             m = models[f"models:{cell}"]["models"][mname]
             templ = m['reftempl']
-            declarations.add(m['decltempl'])
+            declarations.add(m['decltempl'].format(corner="tt")) # TODO
         except KeyError:
             pass
 
