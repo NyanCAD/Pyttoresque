@@ -43,7 +43,7 @@ enum AcType {
 }
 
 interface Result {
-    read @0 () -> (more :Bool, data :List(Vectors), stdout :Text);
+    read @0 () -> (more :Bool, data :List(Vectors), stdout :Data);
 }
 
 struct Vectors {
