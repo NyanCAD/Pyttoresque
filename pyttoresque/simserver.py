@@ -100,7 +100,7 @@ async def read(response, io=stdout):
     """
     data = {}
     res = await response.result.read().a_wait()
-    io.write(res.stdout)
+    io.write(res.stdout.decode('ascii', 'ignore')) # wtf ngpsice
     # print(res)
     for vecs in res.data:
         # this set of vectors is not initialised, skip it
@@ -124,7 +124,7 @@ async def read(response, io=stdout):
     return res.more, data
 
 
-async def stream(response, streamdict, newkey=lambda k:None, io=stdout):
+async def stream(response, streamdict, newkey=lambda k:None, io=stdout, suffix=""):
     """
     Stream simulation data into a Buffer (DataFrame)
     """
@@ -132,6 +132,7 @@ async def stream(response, streamdict, newkey=lambda k:None, io=stdout):
     while more:
         more, res = await read(response, io)
         for k, v in res.items():
+            k = k+suffix # store different runs under different keys
             if k in streamdict and list(v.columns) == list(streamdict[k].data.columns):
                 streamdict[k].send(v)
             else:
@@ -140,12 +141,12 @@ async def stream(response, streamdict, newkey=lambda k:None, io=stdout):
                 newkey(k)
 
 
-async def readAll(response, io=stdout):
+async def readAll(response, io=stdout, suffix=""):
     """
     Read all the simulation data from a simulation command.
     """
     streamdict = {}
-    await stream(response, streamdict, io=io)
+    await stream(response, streamdict, io=io, suffix=suffix)
     return streamdict
 
 async def main():

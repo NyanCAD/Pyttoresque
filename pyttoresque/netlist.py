@@ -293,7 +293,7 @@ def print_props(props):
     return " ".join(prs)
 
 
-def circuit_spice(docs, models, declarations):
+def circuit_spice(docs, models, declarations, corner):
     nl = netlist(docs, models)
     cir = []
     for id, ports in nl.items():
@@ -338,7 +338,7 @@ def circuit_spice(docs, models, declarations):
         try:
             m = models[f"models:{cell}"]["models"][mname]
             templ = m['reftempl']
-            declarations.add(m['decltempl'].format(corner="tt")) # TODO
+            declarations.add(m['decltempl'].format(corner=corner))
         except KeyError:
             pass
 
@@ -346,7 +346,7 @@ def circuit_spice(docs, models, declarations):
     return '\n'.join(cir)
 
 
-def spice_netlist(name, schem, extra=""):
+def spice_netlist(name, schem, extra="", corner='tt', temp=None, **params):
     models = schem["models"]
     declarations = set()
     for subname, docs in schem.items():
@@ -354,10 +354,10 @@ def spice_netlist(name, schem, extra=""):
         _id = SchemId.from_string(subname)
         mod = models[f"models:{_id.cell}"]
         ports = ' '.join(c[2] for c in mod['conn'])
-        body = circuit_spice(docs, models, declarations)
+        body = circuit_spice(docs, models, declarations, corner)
         declarations.add(f".subckt {_id.model} {ports}\n{body}\n.ends {_id.model}") # parameters??
 
-    body = circuit_spice(schem[name], models, declarations)
+    body = circuit_spice(schem[name], models, declarations, corner)
     ckt = []
     ckt.append(f"* {name}")
     ckt.extend(declarations)
