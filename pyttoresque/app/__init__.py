@@ -9,7 +9,6 @@ from jupyter_server.extension.application import ExtensionApp, ExtensionAppJinja
 from tornado.web import addslash
 from traitlets import Bool
 from shutil import which
-from tempfile import NamedTemporaryFile
 from configparser import ConfigParser
 from secrets import token_hex
 from base64 import b64encode
@@ -72,8 +71,12 @@ def setup_couchdb():
         cp.read(tmpl)
         cp['admins']['admin'] = password
         cp['chttpd']['port'] = str(port)
-        tf = NamedTemporaryFile('w', suffix='local.ini', delete=False)
-        cp.write(tf)
+        # we'd like to use a temporary file here
+        # but couchdb writes the uuid to local.ini
+        # and this affects replication
+        # so we have to use a persistent file
+        with open(tmpl, 'w') as f:
+            cp.write(f)
         cmd = ['couchdb', '-couch_ini', tf.name]
         if os.name == 'nt':
             cmd = ["cmd.exe", "/c"] + cmd
