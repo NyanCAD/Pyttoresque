@@ -9,6 +9,10 @@ from jupyter_server.extension.application import ExtensionApp, ExtensionAppJinja
 from tornado.web import addslash
 from traitlets import Bool
 from shutil import which
+from tempfile import NamedTemporaryFile
+from configparser import ConfigParser
+from secrets import token_hex
+from base64 import b64encode
 
 HERE = os.path.dirname(__file__)
 
@@ -59,14 +63,23 @@ def main():
 
 
 def setup_couchdb():
-    cmd = ['couchdb', '-couch_ini', os.path.join(HERE, "static", "local.ini")]
-    if os.name == 'nt':
-        cmd = ["cmd.exe", "/c"] + cmd
+    password = os.environ.get("COUCHDB_ADMIN_PASSWORD", token_hex())
+    auth = "Basic " + b64encode(f"admin:{password}".encode()).decode()
+    def command(port):
+        tmpl = os.path.join(HERE, "templates", "local.ini")
+        cp = ConfigParser()
+        cp.read(tmpl)
+        cp['admins']['admin'] = password
+        cp['chttpd']['port'] = str(port)
+        tf = NamedTemporaryFile('w', suffix='local.ini', delete=False)
+        cp.write(tf)
+        cmd = ['couchdb', '-couch_ini', tf.name]
+        if os.name == 'nt':
+            cmd = ["cmd.exe", "/c"] + cmd
+        return cmd
     return {
-        # hardcode port for backend access
-        'command': cmd,
-        'port': 5984,
-        'request_headers_override': {"Authorization": "Basic YWRtaW46YWRtaW4="},
+        'command': command,
+        'request_headers_override': {"Authorization": auth},
         'timeout': 10,
     }
 
