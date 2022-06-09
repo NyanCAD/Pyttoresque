@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import re
+import os
 import traceback
 import urllib.parse as ulp
 import panel as pn
@@ -47,7 +48,9 @@ If the simulation host is set to "localhost", a local server will be started aut
             # actually use localhost because Jupyter is token authenticated
             purl = ulp.urlparse(url)
             if purl.hostname == "localhost" and purl.path.startswith("/couchdb"):
-                netloc = f"admin:admin@localhost:5984"
+                pw = os.environ.get("COUCHDB_ADMIN_PASSWORD", "admin")
+                port = os.environ.get("COUCHDB_LISTEN_PORT", 5984)
+                netloc = f"admin:{pw}@localhost:{port}"
                 path = purl.path[8:]
                 url = purl._replace(path=path, netloc=netloc).geturl()
                 self.database_url = url

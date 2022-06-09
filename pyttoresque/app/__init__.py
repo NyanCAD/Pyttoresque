@@ -63,9 +63,10 @@ def main():
 
 
 def setup_couchdb():
-    password = os.environ.get("COUCHDB_ADMIN_PASSWORD", token_hex())
+    password = os.environ.setdefault("COUCHDB_ADMIN_PASSWORD", token_hex())
     auth = "Basic " + b64encode(f"admin:{password}".encode()).decode()
     def command(port):
+        os.environ["COUCHDB_LISTEN_PORT"] = str(port)
         tmpl = os.path.join(HERE, "templates", "local.ini")
         cp = ConfigParser()
         cp.read(tmpl)
@@ -88,6 +89,7 @@ def setup_panel():
         'command': ['panel', 'serve',
                     '--allow-websocket-origin', '*',
                     '--prefix', '{base_url}/panel',
+                    '--address', '127.0.0.1',
                     '--port', '{port}', HERE],
         'absolute_url': True,
         'timeout': 10,
