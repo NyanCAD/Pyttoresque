@@ -1,6 +1,20 @@
 # SPDX-FileCopyrightText: 2022 Pepijn de Vos
 #
 # SPDX-License-Identifier: MPL-2.0
+"""
+This module handles communication with a simulation server.
+The underlying protocol is described in https://github.com/NyanCAD/SimServer/blob/main/Simulator.capnp
+
+Basic usage of this module:
+```
+con = await connect("localhost", simulator=Xyce)
+fs = loadFiles(con, "test.cir")
+res = fs.commands.run(["V(*)", "I(*)"])
+print(await readAll(res))
+```
+
+For streaming plots, have a look at `holoviews.streams.Buffer` and https://holoviews.org/user_guide/Streaming_Data.html.
+"""
 
 from os import name
 from time import sleep
@@ -127,6 +141,14 @@ async def read(response, io=stdout):
 async def stream(response, streamdict, newkey=lambda k:None, io=stdout, suffix=""):
     """
     Stream simulation data into a Buffer (DataFrame)
+
+    `streamdict` is a dictionary, where Buffers are added as needed.
+    This is done because some simulation commands have multiple results.
+
+    The `newkey` function is called when a new Buffer is added.
+
+    Additionally, a custom "file-like" object can be passed for logging,
+    and a suffix can be passed that is appended to the dictionary key.
     """
     more = True
     while more:
