@@ -18,7 +18,7 @@ jobs:
 
       - name: build docs
         run: |
-          pip install pydoc-markdown
+          python3 -m pip install pydoc-markdown
           mkdir docs
           pydoc-markdown -p pyttoresque --render-toc > docs/Python-API.md
 
