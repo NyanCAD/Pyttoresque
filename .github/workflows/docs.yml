@@ -23,7 +23,7 @@ jobs:
         run: |
           pip install pydoc-markdown
           mkdir docs
-          pydoc-markdown -p pyttoresque --render-toc > docs/Python-API.md
+          pydoc-markdown -p pyttoresque > docs/Python-API.md
 
       - name: Deploy API docs to Mosaic wiki
         uses: JamesIves/github-pages-deploy-action@v4.3.3
