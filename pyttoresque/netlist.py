@@ -1,6 +1,20 @@
 # SPDX-FileCopyrightText: 2022 Pepijn de Vos
 #
 # SPDX-License-Identifier: MPL-2.0
+"""
+This module communicates with CouchDB to fetch schematics, and generate SPICE netlists out of them.
+
+Basic usage:
+```
+async with SchematicService("http://localhost:5984/offline") as service:
+    name = "top$top"
+    seq, docs = await service.get_all_schem_docs(name)
+    print(spice_netlist(name, docs))
+```
+
+The sequence number can later be used to efficiently update the netlist with `update_schem`.
+For live updates, use `live_schem_docs`.
+"""
 
 import aiohttp
 from collections import deque, namedtuple
@@ -61,8 +75,10 @@ class StatusError(ClientError):
     """Non-200 response"""
 
 class SchematicService(AbstractAsyncContextManager):
-    @classmethod
+    "A context manager for getting schematics from a CoucdDB database"
+
     def __init__(self, url):
+        "Create a HTTP session with the given database URL"
         self.url = url+"/"
         self.session = aiohttp.ClientSession()
 
@@ -70,6 +86,7 @@ class SchematicService(AbstractAsyncContextManager):
         await self.session.close()
 
     async def dbget(self, path, **kwargs):
+        "Do a GET request to the given database endpoint and query parameters"
         url = ulp.urljoin(self.url, path)
         async with self.session.get(url, params=kwargs) as res:
             if res.status != 200:
@@ -77,6 +94,7 @@ class SchematicService(AbstractAsyncContextManager):
             return await res.json()
 
     async def dbpost(self, path, json, **kwargs):
+        "Do a POST request to the given database endpoint, JSON data, and query parameters"
         url = ulp.urljoin(self.url, path)
         async with self.session.post(url, json=json, params=kwargs) as res:
             if res.status != 200:
@@ -84,6 +102,7 @@ class SchematicService(AbstractAsyncContextManager):
             return await res.json()
 
     async def dbstream(self, path, json, **kwargs):
+        "Stream data from the given database endpoint, JSON data, and query parameters"
         url = ulp.urljoin(self.url, path)
         async with self.session.post(url, json=json, params=kwargs) as res:
             if res.status != 200:
@@ -95,6 +114,7 @@ class SchematicService(AbstractAsyncContextManager):
                 yield loads(line)
 
     async def get_docs(self, name):
+        "Get all the documents with the specified schematic ID"
         res = await self.dbget("_all_docs",
             include_docs="true",
             startkey=f'"{name}:"',
@@ -105,6 +125,11 @@ class SchematicService(AbstractAsyncContextManager):
 
 
     async def get_all_schem_docs(self, name):
+        """
+        Recursively get all the documents of the specified schematic and all the subcircuits inside it.
+        And all the model definitions.
+        Returns a sequence number and a dictionary of schematic ID: documents.
+        """
         schem = {}
         seq, models = await self.get_docs("models")
         schem["models"] = models
@@ -123,6 +148,7 @@ class SchematicService(AbstractAsyncContextManager):
         return seq, schem
 
     async def update_schem(self, seq, schem):
+        "Take a sequence number and dictionary as returned by `get_all_schem_docs` and update it."
         sel = doc_selector(schem)
         result = await self.dbget("_changes",
             filter="_selector",
@@ -144,6 +170,7 @@ class SchematicService(AbstractAsyncContextManager):
 
 
     async def live_schem_docs(self, name):
+        "A live stream of updated dictionaries, as returned by `get_all_schem_docs`"
         seq, schem = await self.get_all_schem_docs(name)
         yield schem
 
@@ -240,6 +267,17 @@ def wire_net(wireid, docs, models):
     return netname
 
 def netlist(docs, models):
+    """
+    Turn a collection of documents as returned by `get_docs` into a netlist structure.
+    Returns a dictionary of device ID: {port: net}
+    Usage:
+    ```
+    async with SchematicService("http://localhost:5984/offline") as service:
+        name = "top$top"
+        seq, docs = await service.get_all_schem_docs(name)
+        print(netlist(docs[name], models))
+    ```
+    """
     device_index, wire_index = port_index(docs, models)
     nl = {}
     netnum = 0
@@ -347,6 +385,10 @@ def circuit_spice(docs, models, declarations, corner):
 
 
 def spice_netlist(name, schem, extra="", corner='tt', temp=None, **params):
+    """
+    Generate a spice netlist, taking a dictionary of schematic documents, and the name of the top level schematic.
+    It is possible to pass extra SPICE code and specify the simulation corner.
+    """
     models = schem["models"]
     declarations = set()
     for subname, docs in schem.items():
