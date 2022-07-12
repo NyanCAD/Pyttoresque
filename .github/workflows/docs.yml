@@ -30,6 +30,6 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           repository-name: NyanCAD/Mosaic.wiki
-          branch: main
+          branch: master
           folder: docs
           clean: false
