@@ -75,7 +75,7 @@ class StatusError(ClientError):
     """Non-200 response"""
 
 class SchematicService(AbstractAsyncContextManager):
-    "A context manager for getting schematics from a CoucdDB database"
+    "A context manager for getting schematics from a CouchDB database"
 
     def __init__(self, url):
         "Create a HTTP session with the given database URL"
