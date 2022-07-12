@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2022 Pepijn de Vos
+#
+# SPDX-License-Identifier: MPL-2.0
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
+
+      - name: build docs
+        run: |
+          pip install pydoc-markdown
+          mkdir docs
+          pydoc-markdown -p pyttoresque --render-toc > docs/Python-API.md
+
+      - name: Deploy API docs to Mosaic wiki
+        uses: JamesIves/github-pages-deploy-action@v4.3.3
+        with:
+          token: ${{ secrets.PAT }}
+          repository-name: NyanCAD/Mosaic.wiki
+          branch: main
+          folder: docs
+          clean: false
