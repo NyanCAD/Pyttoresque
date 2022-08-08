@@ -331,7 +331,7 @@ def print_props(props):
     return " ".join(prs)
 
 
-def circuit_spice(docs, models, declarations, corner):
+def circuit_spice(docs, models, declarations, corner, sim):
     nl = netlist(docs, models)
     cir = []
     for id, ports in nl.items():
@@ -374,7 +374,7 @@ def circuit_spice(docs, models, declarations, corner):
         # a spice type model can overwrite its reference
         # for example if the mosfet is really a subcircuit
         try:
-            m = models[f"models:{cell}"]["models"][mname]
+            m = models[f"models:{cell}"]["models"][mname][sim]
             templ = m['reftempl']
             declarations.add(m['decltempl'].format(corner=corner))
         except KeyError:
@@ -384,7 +384,7 @@ def circuit_spice(docs, models, declarations, corner):
     return '\n'.join(cir)
 
 
-def spice_netlist(name, schem, extra="", corner='tt', temp=None, **params):
+def spice_netlist(name, schem, extra="", corner='tt', temp=None, sim="NgSpice", **params):
     """
     Generate a spice netlist, taking a dictionary of schematic documents, and the name of the top level schematic.
     It is possible to pass extra SPICE code and specify the simulation corner.
@@ -396,10 +396,10 @@ def spice_netlist(name, schem, extra="", corner='tt', temp=None, **params):
         _id = SchemId.from_string(subname)
         mod = models[f"models:{_id.cell}"]
         ports = ' '.join(c[2] for c in mod['conn'])
-        body = circuit_spice(docs, models, declarations, corner)
+        body = circuit_spice(docs, models, declarations, corner, sim)
         declarations.add(f".subckt {_id.model} {ports}\n{body}\n.ends {_id.model}") # parameters??
 
-    body = circuit_spice(schem[name], models, declarations, corner)
+    body = circuit_spice(schem[name], models, declarations, corner, sim)
     ckt = []
     ckt.append(f"* {name}")
     ckt.extend(declarations)
@@ -409,6 +409,30 @@ def spice_netlist(name, schem, extra="", corner='tt', temp=None, **params):
 
     return "\n".join(ckt)
 
+# @m.xx1.xmc1.msky130_fd_pr__nfet_01v8[gm]
+def ngspice_vectors(name, schem, path=()):
+    models = schem["models"]
+    print(name)
+    vectors = []
+    for id, elem in schem[name].items():
+        m = models.get("models:"+elem['cell'], {})
+        n = m.get('models', {}).get(elem.get('props', {}).get('model'), {})
+        print(m, n)
+        if n.get('type') == 'spice':
+            vex = n.get('NgSpice', {}).get('vectors', [])
+            typ = n.get('NgSpice', {}).get('reftempl', 'X')[0]
+            if n.get('component'):
+                full = typ + '.' + '.'.join(path + (n.get('component'), typ+elem['name']))
+            elif path:
+                full = typ + '.' + '.'.join(path + (typ+elem['name'],))
+            else:
+                full = typ+elem['name']
+            vectors.extend(f"@{full}[{v}]" for v in vex)
+            print(vex)
+        elif n.get('type') == 'schematic':
+            name = elem['cell']+"$"+elem['props']['model']
+            vectors.extend(ngspice_vectors(name, schem, path+("X"+elem['name'],)))
+    return vectors
 
 async def main():
     async with SchematicService("http://localhost:5984/offline") as service:
@@ -416,7 +440,8 @@ async def main():
         seq, docs = await service.get_all_schem_docs(name)
         # print(port_index(docs[name], models))
         # print(netlist(docs[name], models))
-        print(spice_netlist(name, docs))
+        # print(spice_netlist(name, docs))
+        print(ngspice_vectors(name, docs))
 
 if __name__ == "__main__":
     import asyncio
