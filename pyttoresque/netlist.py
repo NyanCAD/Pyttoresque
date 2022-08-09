@@ -412,23 +412,23 @@ def spice_netlist(name, schem, extra="", corner='tt', temp=None, sim="NgSpice", 
 # @m.xx1.xmc1.msky130_fd_pr__nfet_01v8[gm]
 def ngspice_vectors(name, schem, path=()):
     models = schem["models"]
-    print(name)
     vectors = []
     for id, elem in schem[name].items():
         m = models.get("models:"+elem['cell'], {})
         n = m.get('models', {}).get(elem.get('props', {}).get('model'), {})
-        print(m, n)
         if n.get('type') == 'spice':
             vex = n.get('NgSpice', {}).get('vectors', [])
-            typ = n.get('NgSpice', {}).get('reftempl', 'X')[0]
-            if n.get('component'):
-                full = typ + '.' + '.'.join(path + (n.get('component'), typ+elem['name']))
+            comp = n.get('NgSpice', {}).get('component')
+            reftempl = n.get('NgSpice', {}).get('reftempl')
+            typ = (comp or reftempl or 'X')[0]
+            dtyp = (reftempl or 'X')[0]
+            if comp:
+                full = typ + '.' + '.'.join(path + (dtyp+elem['name'], comp))
             elif path:
-                full = typ + '.' + '.'.join(path + (typ+elem['name'],))
+                full = typ + '.' + '.'.join(path + (dtyp+elem['name'],))
             else:
                 full = typ+elem['name']
-            vectors.extend(f"@{full}[{v}]" for v in vex)
-            print(vex)
+            vectors.extend(f"@{full}[{v}]".lower() for v in vex)
         elif n.get('type') == 'schematic':
             name = elem['cell']+"$"+elem['props']['model']
             vectors.extend(ngspice_vectors(name, schem, path+("X"+elem['name'],)))
