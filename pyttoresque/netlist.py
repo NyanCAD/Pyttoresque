@@ -409,11 +409,45 @@ def spice_netlist(name, schem, extra="", corner='tt', temp=None, sim="NgSpice", 
 
     return "\n".join(ckt)
 
+default_device_vectors = {
+    'resistor': ['i'],
+    'capacitor': ['i'],
+    'inductor': ['i'],
+    'vsource': ['i'],
+    'isource': [],
+    'diode': [],
+    'nmos': ['gm', 'id', 'vdsat'],
+    'pmos': ['gm', 'id', 'vdsat'],
+    'npn': ['gm', 'ic', 'ib'],
+    'pnp': ['gm', 'ic', 'ib'],
+
+}
+device_prefix = {
+    'resistor': 'r',
+    'capacitor': 'c',
+    'inductor': 'l',
+    'vsource': 'v',
+    'isource': 'i',
+    'diode': 'd',
+    'nmos': 'm',
+    'pmos': 'm',
+    'npn': 'q',
+    'pnp': 'q',
+
+}
 # @m.xx1.xmc1.msky130_fd_pr__nfet_01v8[gm]
 def ngspice_vectors(name, schem, path=()):
+    """
+    Extract all the relevant vectors from the schematic,
+    and format them in NgSpice syntax.
+    Saves label/port net names, and vectors indicated on spice models.
+    """
     models = schem["models"]
     vectors = []
     for id, elem in schem[name].items():
+        if elem['cell'] == 'port' and elem['name'].lower() != 'gnd':
+            vectors.append(elem['name'])
+            continue
         m = models.get("models:"+elem['cell'], {})
         n = m.get('models', {}).get(elem.get('props', {}).get('model'), {})
         if n.get('type') == 'spice':
@@ -432,6 +466,15 @@ def ngspice_vectors(name, schem, path=()):
         elif n.get('type') == 'schematic':
             name = elem['cell']+"$"+elem['props']['model']
             vectors.extend(ngspice_vectors(name, schem, path+("X"+elem['name'],)))
+        elif elem['cell'] in default_device_vectors: # no model specified
+            print(elem)
+            vex = default_device_vectors[elem['cell']]
+            typ = device_prefix.get(elem['cell'], 'x')
+            if path:
+                full = typ + '.' + '.'.join(path + (typ+elem['name'],))
+            else:
+                full = typ+elem['name']
+            vectors.extend(f"@{full}[{v}]".lower() for v in vex)
     return vectors
 
 async def main():
