@@ -22,6 +22,7 @@ from json import loads
 import urllib.parse as ulp
 from contextlib import AbstractAsyncContextManager
 from aiohttp.client_exceptions import ClientError
+from datetime import datetime
 
 
 def shape_ports(shape):
@@ -191,6 +192,10 @@ class SchematicService(AbstractAsyncContextManager):
             else:
                 schem[_id.schem][doc["_id"]] = doc
             yield schem
+
+    async def save_simulation(self, name, data):
+        data['_id'] = name + "$result" + datetime.utcnow().isoformat()
+        return self.dbpost('', data)
 
 
 def rotate(shape, transform, devx, devy):
@@ -446,7 +451,7 @@ def ngspice_vectors(name, schem, path=()):
     vectors = []
     for id, elem in schem[name].items():
         if elem['cell'] == 'port' and elem['name'].lower() != 'gnd':
-            vectors.append(elem['name'])
+            vectors.append(('.'.join(path + (elem['name'],))).lower())
             continue
         m = models.get("models:"+elem['cell'], {})
         n = m.get('models', {}).get(elem.get('props', {}).get('model'), {})
@@ -467,7 +472,6 @@ def ngspice_vectors(name, schem, path=()):
             name = elem['cell']+"$"+elem['props']['model']
             vectors.extend(ngspice_vectors(name, schem, path+("X"+elem['name'],)))
         elif elem['cell'] in default_device_vectors: # no model specified
-            print(elem)
             vex = default_device_vectors[elem['cell']]
             typ = device_prefix.get(elem['cell'], 'x')
             if path:

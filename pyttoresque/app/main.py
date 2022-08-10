@@ -26,7 +26,7 @@ If the simulation host is set to "localhost", a local server will be started aut
     schematic = param.String()
     database_url = param.String(label="Database URL")
     spice = param.String(precedence=-1)
-    netlist = param.Dict(precedence=-1)
+    vectors = param.List(precedence=-1)
     
     simulator = param.Selector(objects={"NgSpice": simserver.Ngspice, "Xyce": simserver.Xyce})
     host = param.String(default="localhost")
@@ -61,8 +61,10 @@ If the simulation host is set to "localhost", a local server will be started aut
                 async for schem in it:
                     if url != self.database_url or name != self.schematic:
                         break
-                    self.netlist = schem
                     self.spice = netlist.spice_netlist(name, schem, self.extra_spice)
+                    if self.simulator == simserver.Ngspice:
+                        self.vectors = netlist.ngspice_vectors(name, schem)
+                        print(self.vectors)
                     self.error = None
         except Exception as e:
             self.error = e
@@ -88,8 +90,9 @@ If the simulation host is set to "localhost", a local server will be started aut
 
 
 class Simulation(param.Parameterized):
-    vectors = param.List(precedence=0.5)
+    vectors = param.ListSelector(default=[], precedence=0.5)
     rerun_on_change = param.Boolean(True, precedence=0.5)
+    save_results = param.Boolean(False, precedence=0.5)
 
     def cmd(self, fs):
         raise NotImplementedError()
@@ -215,7 +218,7 @@ class SimTabs(param.Parameterized):
             AcSimulation(name="AC simulation"),
             DcSimulation(name="DC sweep"),
             NoiseSimulation(name="Noise simulation"),
-            FftSimulation(name="FFT simulation"),
+            #FftSimulation(name="FFT simulation"),
         ])
 
     def cb(self, _, e):
@@ -248,13 +251,15 @@ class Results(param.Parameterized):
         super().__init__()
         self.terminal = pn.widgets.Terminal(height=300, sizing_mode='stretch_width')
 
-    async def simulate(self, _=None):
+    async def simulate(self, *, save=False):
         try:
             for v in self.data.values():
                 v.clear()
             res = await self.cmd()
             newkey = lambda k: self.param.trigger('data')
             await simserver.stream(res, self.data, newkey, self.terminal)
+            # TODO actually save the data back
+            # problem is the URL is all the way over at the configuration
         except Exception as e:
             self.error = e
             traceback.print_exc()
@@ -328,8 +333,8 @@ class Simulator(param.Parameterized):
         )
         self.brch = BroadcastChannel(name="probe", sizing_mode='fixed')
         self.brch.param.watch(self._probe, ['value'], onlychanged=False)
-        self.conf.param.watch(self._run, ['spice'])
-        self.param.watch(self._run, ['stage'], onlychanged=False)
+        self.conf.param.watch(self._run_change, ['spice'])
+        self.param.watch(self._run_btn, ['stage'], onlychanged=False)
         self.tabs.param.watch(self._cmd, ['sim'])
         self._cmd(None)
 
@@ -340,12 +345,20 @@ class Simulator(param.Parameterized):
         self.res.data = {}
         self.res.cmd = simcmd
         self.res.plotcmd = self.tabs.sim.plotcmd
+        self.tabs.sim.param.vectors.objects = self.conf.vectors
     
-    async def _run(self, e):
+    async def _run_change(self, e):
+        self.tabs.sim.param.vectors.objects = self.conf.vectors
         if (self.res.cmd
         and self.stage == "res"
         and self.tabs.sim.rerun_on_change):
             await self.res.simulate()
+
+    async def _run_btn(self, e):
+        if (self.res.cmd
+        and self.stage == "res"):
+            await self.res.simulate()
+
 
     def _probe(self, e):
         key = e.obj.value
