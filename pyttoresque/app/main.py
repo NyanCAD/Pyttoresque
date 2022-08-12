@@ -107,6 +107,8 @@ Perform a non-linear, time-domain simulation"""
     maximum_timestep = param.Number(1e-5)
     start_time = param.Number(0)
     stop_time = param.Number(1e-3)
+
+    rerun_on_change = param.Boolean(False, precedence=0.5)
     
     def cmd(self, fs):
         return fs.commands.tran(self.maximum_timestep, self.stop_time, self.start_time, self.vectors)
@@ -146,6 +148,8 @@ class OpSimulation(Simulation):
     doc = """# Operating point
 Find the DC operating point, treating capacitances as open circuits and inductors as shorts
 """
+
+    save_results = param.Boolean(True, precedence=0.5)
 
     def cmd(self, fs):
         return fs.commands.op(self.vectors)
@@ -251,15 +255,16 @@ class Results(param.Parameterized):
         super().__init__()
         self.terminal = pn.widgets.Terminal(height=300, sizing_mode='stretch_width')
 
-    async def simulate(self, *, save=False):
+    async def simulate(self, *, save=False, database_url=None, name=None):
         try:
             for v in self.data.values():
                 v.clear()
             res = await self.cmd()
             newkey = lambda k: self.param.trigger('data')
             await simserver.stream(res, self.data, newkey, self.terminal)
-            # TODO actually save the data back
-            # problem is the URL is all the way over at the configuration
+            if save and database_url and name:
+                async with netlist.SchematicService(database_url) as service:
+                    await service.save_simulation(name, self.data)
         except Exception as e:
             self.error = e
             traceback.print_exc()
@@ -352,12 +357,20 @@ class Simulator(param.Parameterized):
         if (self.res.cmd
         and self.stage == "res"
         and self.tabs.sim.rerun_on_change):
-            await self.res.simulate()
+            await self.res.simulate(
+                save=self.tabs.sim.save_results,
+                database_url=self.conf.database_url,
+                name=self.conf.schematic,
+            )
 
     async def _run_btn(self, e):
         if (self.res.cmd
         and self.stage == "res"):
-            await self.res.simulate()
+            await self.res.simulate(
+                save=self.tabs.sim.save_results,
+                database_url=self.conf.database_url,
+                name=self.conf.schematic,
+            )
 
 
     def _probe(self, e):

@@ -90,7 +90,7 @@ class SchematicService(AbstractAsyncContextManager):
         "Do a GET request to the given database endpoint and query parameters"
         url = ulp.urljoin(self.url, path)
         async with self.session.get(url, params=kwargs) as res:
-            if res.status != 200:
+            if res.status >= 400:
                 raise StatusError(await res.json())
             return await res.json()
 
@@ -98,7 +98,15 @@ class SchematicService(AbstractAsyncContextManager):
         "Do a POST request to the given database endpoint, JSON data, and query parameters"
         url = ulp.urljoin(self.url, path)
         async with self.session.post(url, json=json, params=kwargs) as res:
-            if res.status != 200:
+            if res.status >= 400:
+                raise StatusError(await res.json())
+            return await res.json()
+
+    async def dbput(self, path, json, **kwargs):
+        "Do a PUT request to the given database endpoint, data, and query parameters"
+        url = ulp.urljoin(self.url, path)
+        async with self.session.put(url, data=json, params=kwargs) as res:
+            if res.status >= 400:
                 raise StatusError(await res.json())
             return await res.json()
 
@@ -106,7 +114,7 @@ class SchematicService(AbstractAsyncContextManager):
         "Stream data from the given database endpoint, JSON data, and query parameters"
         url = ulp.urljoin(self.url, path)
         async with self.session.post(url, json=json, params=kwargs) as res:
-            if res.status != 200:
+            if res.status >= 400:
                 raise StatusError(await res.json())
             while True:
                 line = await res.content.readline()
@@ -194,8 +202,10 @@ class SchematicService(AbstractAsyncContextManager):
             yield schem
 
     async def save_simulation(self, name, data):
-        data['_id'] = name + "$result" + datetime.utcnow().isoformat()
-        return self.dbpost('', data)
+        for k, v in data.items():
+            _id = name + "$result:" + k + "@" + datetime.utcnow().isoformat()
+            data = v.data.to_json()
+            await self.dbput(_id, data)
 
 
 def rotate(shape, transform, devx, devy):
