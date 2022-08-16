@@ -19,6 +19,7 @@ For live updates, use `live_schem_docs`.
 import aiohttp
 from collections import deque, namedtuple
 from json import loads
+import jsons
 import urllib.parse as ulp
 from contextlib import AbstractAsyncContextManager
 from aiohttp.client_exceptions import ClientError
@@ -202,10 +203,17 @@ class SchematicService(AbstractAsyncContextManager):
             yield schem
 
     async def save_simulation(self, name, data):
+        time = datetime.utcnow().isoformat()
         for k, v in data.items():
-            _id = name + "$result:" + k + "@" + datetime.utcnow().isoformat()
-            data = v.data.to_json()
-            await self.dbput(_id, data)
+            _id = name + "$result:" + k + "@" + time
+            data = {}
+            df = v.data.reset_index()
+            print(df)
+            for col in df:
+                print(col)
+                data[col] = df[col].to_list()
+            strdata = jsons.dumps(data)
+            await self.dbput(_id, strdata)
 
 
 def rotate(shape, transform, devx, devy):
@@ -232,6 +240,8 @@ def getports(doc, models):
         ry = doc['ry']
         return {(x, y): None,
                 (x+rx, y+ry): None}
+    elif cell == 'text':
+        return {}
     elif cell == 'port':
         return {(x, y): doc['name']}
     elif cell in {'nmos', 'pmos'}:
