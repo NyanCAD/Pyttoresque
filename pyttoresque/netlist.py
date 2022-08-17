@@ -19,11 +19,12 @@ For live updates, use `live_schem_docs`.
 import aiohttp
 from collections import deque, namedtuple
 from json import loads
-import jsons
 import urllib.parse as ulp
 from contextlib import AbstractAsyncContextManager
 from aiohttp.client_exceptions import ClientError
 from datetime import datetime
+import numpy as np
+from holoviews.streams import Buffer
 
 
 def shape_ports(shape):
@@ -106,7 +107,7 @@ class SchematicService(AbstractAsyncContextManager):
     async def dbput(self, path, json, **kwargs):
         "Do a PUT request to the given database endpoint, data, and query parameters"
         url = ulp.urljoin(self.url, path)
-        async with self.session.put(url, data=json, params=kwargs) as res:
+        async with self.session.put(url, json=json, params=kwargs) as res:
             if res.status >= 400:
                 raise StatusError(await res.json())
             return await res.json()
@@ -204,16 +205,23 @@ class SchematicService(AbstractAsyncContextManager):
 
     async def save_simulation(self, name, data):
         time = datetime.utcnow().isoformat()
+        _id = name + "$result:" + time
+        jsondata = {}
         for k, v in data.items():
-            _id = name + "$result:" + k + "@" + time
-            data = {}
-            df = v.data.reset_index()
-            print(df)
-            for col in df:
-                print(col)
-                data[col] = df[col].to_list()
-            strdata = jsons.dumps(data)
-            await self.dbput(_id, strdata)
+            if isinstance(v, Buffer):
+                df = v.data.reset_index()
+                jsondata[k] = {}
+                for col in df:
+                    if df[col].dtype == complex:
+                        jsondata[k][col] = {
+                            "mag": df[col].abs().to_list(),
+                            "arg": list(np.angle(df[col].to_list()))
+                        }
+                    else:
+                        jsondata[k][col] = df[col].to_list()
+            else:
+                jsondata[k] = v
+        return await self.dbput(_id, jsondata)
 
 
 def rotate(shape, transform, devx, devy):

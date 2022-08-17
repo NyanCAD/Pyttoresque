@@ -31,7 +31,6 @@ setuptools.setup(
         'numpy',
         'jupyterlab',
         'jupyter-server-proxy',
-        'jsons',
     ],
     package_data={
         'pyttoresque': [
