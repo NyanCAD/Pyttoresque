@@ -92,7 +92,7 @@ If the simulation host is set to "localhost", a local server will be started aut
 class Simulation(param.Parameterized):
     vectors = param.ListSelector(default=[], precedence=0.5)
     rerun_on_change = param.Boolean(True, precedence=0.5)
-    save_results = param.Boolean(False, precedence=0.5)
+    back_annotate = param.Boolean(False, precedence=0.5)
 
     def cmd(self, fs):
         raise NotImplementedError()
@@ -149,7 +149,7 @@ class OpSimulation(Simulation):
 Find the DC operating point, treating capacitances as open circuits and inductors as shorts
 """
 
-    save_results = param.Boolean(True, precedence=0.5)
+    back_annotate = param.Boolean(True, precedence=0.5)
 
     def cmd(self, fs):
         return fs.commands.op(self.vectors)
@@ -358,7 +358,7 @@ class Simulator(param.Parameterized):
         and self.stage == "res"
         and self.tabs.sim.rerun_on_change):
             await self.res.simulate(
-                save=self.tabs.sim.save_results,
+                save=self.tabs.sim.back_annotate,
                 database_url=self.conf.database_url,
                 name=self.conf.schematic,
             )
@@ -367,7 +367,7 @@ class Simulator(param.Parameterized):
         if (self.res.cmd
         and self.stage == "res"):
             await self.res.simulate(
-                save=self.tabs.sim.save_results,
+                save=self.tabs.sim.back_annotate,
                 database_url=self.conf.database_url,
                 name=self.conf.schematic,
             )

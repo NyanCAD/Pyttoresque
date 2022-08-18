@@ -204,6 +204,9 @@ class SchematicService(AbstractAsyncContextManager):
             yield schem
 
     async def save_simulation(self, name, data):
+        """takes a schematic name and data as populated by
+        `pyttoresque.simserver.stream` and saves it to the database.
+        Additional keys can be added as the designer sees fit."""
         time = datetime.utcnow().isoformat()
         _id = name + "$result:" + time
         jsondata = {}
