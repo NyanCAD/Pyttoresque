@@ -7,15 +7,12 @@ from jupyter_server.base.handlers import JupyterHandler
 from jupyter_server.extension.handler import ExtensionHandlerJinjaMixin, ExtensionHandlerMixin
 from jupyter_server.extension.application import ExtensionApp, ExtensionAppJinjaMixin
 from tornado.web import addslash
-from traitlets import Bool
-from shutil import which
+from traitlets import Unicode
 from configparser import ConfigParser
 from secrets import token_hex
 from base64 import b64encode
 
 HERE = os.path.dirname(__file__)
-
-has_couchdb = bool(which("couchdb"))
 
 class LibmanHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterHandler):
     @addslash
@@ -25,7 +22,8 @@ class LibmanHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterHa
                 "libman.html",
                 static=self.static_url,
                 token=self.settings["token"],
-                couchdb=has_couchdb,
+                couchdb=self.settings['mosaic_config']['couchdb'],
+                couchdb_sync=self.settings['mosaic_config']['couchdb_sync'],
             )
         )
 
@@ -37,7 +35,8 @@ class MosaicHandler(ExtensionHandlerJinjaMixin, ExtensionHandlerMixin, JupyterHa
                 "editor.html",
                 static=self.static_url,
                 token=self.settings["token"],
-                couchdb=has_couchdb,
+                couchdb=self.settings['mosaic_config']['couchdb'],
+                couchdb_sync=self.settings['mosaic_config']['couchdb_sync'],
             )
         )
 
@@ -46,6 +45,9 @@ class Mosaic(ExtensionAppJinjaMixin, ExtensionApp):
     default_url = "/mosaic"
     static_paths = [os.path.join(HERE, "static")]
     template_paths = [os.path.join(HERE, "templates")]
+
+    couchdb = Unicode("proxy", help="CouchDB URL to use").tag(config=True)
+    couchdb_sync = Unicode(help="Remote CouchDB URL to synch PouchDB with").tag(config=True)
     
     def initialize_settings(self):
         super().initialize_settings()
@@ -77,7 +79,7 @@ def setup_couchdb():
         # so we have to use a persistent file
         with open(tmpl, 'w') as f:
             cp.write(f)
-        cmd = ['couchdb', '-couch_ini', tf.name]
+        cmd = ['couchdb', '-couch_ini', tmpl]
         if os.name == 'nt':
             cmd = ["cmd.exe", "/c"] + cmd
         return cmd

@@ -29,8 +29,13 @@ SPDX-License-Identifier: MPL-2.0
 <body>
   <div id="mosaic_editor"></div>
   <script>
-    {% if couchdb %}
-    window.dburl = new URL("/couchdb/", window.location).href
+    {% if couchdb=="proxy" %}
+    window.dburl = new URL("../../couchdb/", window.location).href
+    {% elif couchdb %}
+    window.dburl = "{{ couchdb }}"
+    {% endif %}
+    {% if couchdb_sync %}
+    window.default_sync = "{{ couchdb_sync }}"
     {% endif %}
     window.notebookurl = "../../lab"
     window.simulatorurl = "../../panel/app"
