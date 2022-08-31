@@ -93,7 +93,7 @@ def setup_panel():
     return {
         'command': ['panel', 'serve',
                     '--allow-websocket-origin', '*',
-                    '--prefix', '{base_url}/panel',
+                    '--prefix', '{base_url}panel',
                     '--address', '127.0.0.1',
                     '--port', '{port}', HERE],
         'absolute_url': True,
